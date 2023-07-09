@@ -1,0 +1,47 @@
+# This workflow uses actions that are not certified by GitHub.
+# They are provided by a third-party and are governed by
+# separate terms of service, privacy policy, and support
+# documentation.
+
+name: Elixir CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  build:
+
+    name: Build and test
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Set up LCOV
+      uses: hrishikesh-kadam/setup-lcov@v1
+    - name: Set up Elixir
+      uses: erlef/setup-beam@v1.16.0
+      with:
+        elixir-version: '1.15.2' # Define the elixir version [required]
+        otp-version: '25.3' # Define the OTP version [required]
+    - name: Restore dependencies cache
+      uses: actions/cache@v3
+      with:
+        path: deps
+        key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
+        restore-keys: ${{ runner.os }}-mix-
+    - name: Install dependencies
+      run: mix deps.get
+    - name: Run tests
+      run: mix test --cover
+    - name: Report LCOV
+      uses: zgosalvez/github-actions-report-lcov@v3.1.7
+      with:
+        coverage-files: cover/lcov.info
+        github-token: ${{ secrets.GITHUB_TOKEN }}
