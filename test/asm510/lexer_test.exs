@@ -19,4 +19,19 @@ defmodule ASM510.LexerTest do
       assert tokens == {:error, 1, {:bad_number, String.slice(test_input, 2..-1//1)}}
     end
   end
+
+  test "operators" do
+    test_input = "><<^>><"
+    tokens = ASM510.Lexer.lex(test_input)
+
+    assert tokens =
+             {:ok,
+              [
+                {{:operator, :right_shift}, 1},
+                {{:operator, :left_shift}, 1},
+                {{:operator, :xor}, 1},
+                {{:operator, :right_shift}, 1},
+                {{:operator, :left_shift}, 1}
+              ]}
+  end
 end

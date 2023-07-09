@@ -11,13 +11,15 @@ defmodule ASM510.Lexer do
   defguardp is_digit(c) when is_nonzero_digit(c) or c == ?0
 
   defguardp is_valid_identifier_start(c)
-            when c in ?A..?Z or c in ?a..?z or c == ?$ or c == ?_ or c == ?.
+            when c in ?A..?Z or c in ?a..?z or c in ~c[$_.]
 
   defguardp is_valid_identifier(c) when is_valid_identifier_start(c) or is_digit(c)
 
-  defguardp is_whitespace(c) when c == ?\s or c == ?\t
+  defguardp is_whitespace(c) when c in ~c[\s\t]
 
-  defguardp is_separator(c) when c == ?, or c == ?:
+  defguardp is_separator(c) when c in ~c[,:]
+
+  defguardp is_operator(c) when c in ~c[+-*/()<>%~|&^!]
 
   defp scan([], _, tokens), do: {:ok, Enum.reverse(tokens)}
 
@@ -39,6 +41,30 @@ defmodule ASM510.Lexer do
       # Comment
       "#" <> _ ->
         scan(["" | remaining_lines], line_number, tokens)
+
+      # 2-char left shift
+      "<<" <> remaining_string ->
+        {:ok, token} = operator_to_token(?<, line_number)
+
+        scan([remaining_string | remaining_lines], line_number, [
+          {token, line_number} | tokens
+        ])
+
+      # 2-char right shift
+      ">>" <> remaining_string ->
+        {:ok, token} = operator_to_token(?>, line_number)
+
+        scan([remaining_string | remaining_lines], line_number, [
+          {token, line_number} | tokens
+        ])
+
+      # 1-char expression operators
+      <<c::utf8>> <> remaining_string when is_operator(c) ->
+        with {:ok, token} <- operator_to_token(c, line_number) do
+          scan([remaining_string | remaining_lines], line_number, [
+            {token, line_number} | tokens
+          ])
+        end
 
       # Hexadecimal number
       "0x" <> remaining_string ->
@@ -107,9 +133,43 @@ defmodule ASM510.Lexer do
     end
   end
 
+  @operator_token_map %{
+    ?+ => :plus,
+    ?- => :minus,
+    ?* => :multiply,
+    ?/ => :divide,
+    ?( => :open_paren,
+    ?) => :close_paren,
+    ?< => :left_shift,
+    ?> => :right_shift,
+    ?% => :modulo,
+    ?~ => :complement,
+    ?| => :or,
+    ?& => :and,
+    ?^ => :xor,
+    ?! => :nor
+  }
+  defp operator_to_token(c, line_number) do
+    with {:ok, operator} <- Map.fetch(@operator_token_map, c) do
+      {:ok, {:operator, operator}}
+    else
+      :error -> {:error, line_number, {:unknown_operator, c}}
+    end
+  end
+
   def token_to_string(:eol), do: "EOL"
   def token_to_string({:separator, c}), do: "Separator \"#{to_string([c])}\""
   def token_to_string({:identifier, name}), do: "Identifier \"#{name}\""
   def token_to_string({:number, value}), do: "Number \"#{value}\""
+
+  def token_to_string({:operator, operator}) do
+    c =
+      @operator_token_map
+      |> Enum.find(fn {_, val} -> val == operator end)
+      |> elem(0)
+
+    "Operator: #{to_string([c])}"
+  end
+
   def token_to_string(token), do: "Unknown token \"#{inspect(token)}\""
 end
