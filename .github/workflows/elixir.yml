@@ -22,6 +22,8 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
+    - name: Set up LCOV
+      uses: hrishikesh-kadam/setup-lcov@v1
     - name: Set up Elixir
       uses: erlef/setup-beam@v1.16.0
       with:
