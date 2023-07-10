@@ -5,7 +5,7 @@ end
 defmodule ASM510.Generator do
   import Bitwise
 
-  alias ASM510.{Generator.State, Opcodes}
+  alias ASM510.{Generator.State, Opcodes, Expression}
 
   def generate(syntax) do
     with {:ok, state} <- generate_all(syntax, %State{}) do
@@ -35,26 +35,27 @@ defmodule ASM510.Generator do
       {{:label, label_name}, _} ->
         {:ok, %State{state | env: Map.put_new(state.env, label_name, state.pc)}}
 
-      {{:call, ".set", [{:name, name}, value_arg]}, line_number} ->
-        with {:ok, value} <- get_number_arg(value_arg, state, line_number) do
+      # First arg to .set is expected to be an undefined symbol
+      {{:call, ".set", [{:expression, [identifier: name]}, {:expression, value_expr}]}, _} ->
+        with {:ok, value} <- Expression.evaluate(value_expr, state.env) do
           {:ok, %State{state | env: Map.put_new(state.env, name, value)}}
         end
 
-      {{:call, ".org", [arg]}, line_number} ->
-        with {:ok, value} <- get_number_arg(arg, state, line_number) do
+      {{:call, ".org", [{:expression, expr}]}, _} ->
+        with {:ok, value} <- Expression.evaluate(expr, state.env) do
           {:ok, %State{state | pc: value}}
         end
 
-      {{:call, ".word", [arg]}, line_number} ->
-        with {:ok, value} <- get_number_arg(arg, state, line_number) do
+      {{:call, ".word", [{:expression, expr}]}, _} ->
+        with {:ok, value} <- Expression.evaluate(expr, state.env) do
           put_byte(state, value) |> increment_pc() |> then(&{:ok, &1})
         end
 
       {{:call, opcode, args}, line_number} ->
         arg_values_result =
           args
-          |> Enum.reduce_while({:ok, []}, fn arg, {:ok, args} ->
-            with {:ok, value} <- get_number_arg(arg, state, line_number) do
+          |> Enum.reduce_while({:ok, []}, fn {:expression, expr}, {:ok, args} ->
+            with {:ok, value} <- Expression.evaluate(expr, state.env) do
               {:cont, {:ok, args ++ [value]}}
             else
               error -> {:halt, error}
@@ -67,16 +68,6 @@ defmodule ASM510.Generator do
           |> Enum.reduce(state, &(&2 |> put_byte(&1) |> increment_pc()))
           |> then(&{:ok, &1})
         end
-    end
-  end
-
-  defp get_number_arg({:number, value}, _, _), do: {:ok, value}
-
-  defp get_number_arg({:name, name}, state, line_number) do
-    with {:ok, value} <- Map.fetch(state.env, name) do
-      {:ok, value}
-    else
-      :error -> {:error, line_number, {:undefined_name, name}}
     end
   end
 

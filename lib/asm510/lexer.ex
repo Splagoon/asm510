@@ -58,7 +58,23 @@ defmodule ASM510.Lexer do
           {token, line_number} | tokens
         ])
 
-      # 1-char expression operators
+      # Minus can be unary (negation) or binary (subtraction)
+      "-" <> remaining_string ->
+        operator =
+          case tokens do
+            # First token => negate
+            [] -> :negate
+            # Previous token is an operator (except ")") => negate
+            [{{:operator, operator}, _} | _] when operator != :close_paren -> :negate
+            # Otherwise => subtraction
+            _ -> :subtract
+          end
+
+        scan([remaining_string | remaining_lines], line_number, [
+          {{:operator, operator}, line_number} | tokens
+        ])
+
+      # Other 1-char expression operators
       <<c::utf8>> <> remaining_string when is_operator(c) ->
         with {:ok, token} <- operator_to_token(c, line_number) do
           scan([remaining_string | remaining_lines], line_number, [
@@ -134,20 +150,19 @@ defmodule ASM510.Lexer do
   end
 
   @operator_token_map %{
-    ?+ => :plus,
-    ?- => :minus,
+    ?+ => :add,
     ?* => :multiply,
     ?/ => :divide,
     ?( => :open_paren,
     ?) => :close_paren,
     ?< => :left_shift,
     ?> => :right_shift,
-    ?% => :modulo,
+    ?% => :remainder,
     ?~ => :complement,
     ?| => :or,
     ?& => :and,
     ?^ => :xor,
-    ?! => :nor
+    ?! => :or_not
   }
   defp operator_to_token(c, line_number) do
     with {:ok, operator} <- Map.fetch(@operator_token_map, c) do
@@ -164,9 +179,15 @@ defmodule ASM510.Lexer do
 
   def token_to_string({:operator, operator}) do
     c =
-      @operator_token_map
-      |> Enum.find(fn {_, val} -> val == operator end)
-      |> elem(0)
+      case operator do
+        _ when operator in [:subtract, :negate] ->
+          ?-
+
+        _ ->
+          @operator_token_map
+          |> Enum.find(fn {_, val} -> val == operator end)
+          |> elem(0)
+      end
 
     "Operator: #{to_string([c])}"
   end

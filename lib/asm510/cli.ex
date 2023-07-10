@@ -54,11 +54,13 @@ defmodule ASM510.CLI do
   defp error_message({:bad_identifier, name}), do: "Not a valid identifier: \"#{name}\""
   defp error_message({:bad_number, num}), do: "Not a valid number: \"#{num}\""
 
-  # Parser error
+  # Parser errors
   defp error_message({:unexpected_token, token}),
     do: "Unexpected token: #{Lexer.token_to_string(token)}"
 
-  # CLI error
+  defp error_message({:undefined_symbol, name}), do: "Undefined symbol: \"#{name}\""
+
+  # CLI errors
   defp error_message(:missing_input), do: "Missing input file"
   defp error_message(:too_many_inputs), do: "More than one input file was specified"
   defp error_message(:enoent), do: "File not found"

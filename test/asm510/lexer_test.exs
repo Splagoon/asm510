@@ -24,14 +24,31 @@ defmodule ASM510.LexerTest do
     test_input = "><<^>><"
     tokens = ASM510.Lexer.lex(test_input)
 
-    assert tokens =
+    assert tokens ==
              {:ok,
               [
                 {{:operator, :right_shift}, 1},
                 {{:operator, :left_shift}, 1},
                 {{:operator, :xor}, 1},
                 {{:operator, :right_shift}, 1},
-                {{:operator, :left_shift}, 1}
+                {{:operator, :left_shift}, 1},
+                {:eol, 1}
+              ]}
+  end
+
+  test "unary/binary minus" do
+    test_input = "-2 - -1"
+    tokens = ASM510.Lexer.lex(test_input)
+
+    assert tokens ==
+             {:ok,
+              [
+                {{:operator, :negate}, 1},
+                {{:number, 2}, 1},
+                {{:operator, :subtract}, 1},
+                {{:operator, :negate}, 1},
+                {{:number, 1}, 1},
+                {:eol, 1}
               ]}
   end
 end

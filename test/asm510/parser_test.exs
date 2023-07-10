@@ -29,6 +29,16 @@ defmodule ASM510.ParserTest do
     ]
 
     syntax = ASM510.Parser.parse(test_tokens)
-    assert syntax == {:ok, [{{:call, "call", [number: 1, name: "name", number: 2]}, 1}]}
+
+    assert syntax ==
+             {:ok,
+              [
+                {{:call, "call",
+                  [
+                    {:expression, [number: 1]},
+                    {:expression, [identifier: "name"]},
+                    {:expression, [number: 2]}
+                  ]}, 1}
+              ]}
   end
 end
