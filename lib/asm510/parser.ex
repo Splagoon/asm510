@@ -45,19 +45,23 @@ defmodule ASM510.Parser do
 
       # Expression
       _ ->
-        {expression_tokens, [separator_token | remaining_tokens]} =
+        {expression_tokens, [{separator_token, line} | remaining_tokens]} =
           Enum.split_while(tokens, fn {t, _} ->
             t not in [:eol, {:separator, ?,}]
           end)
 
-        with {:ok, expression} <- Expression.parse(expression_tokens) do
-          new_args = [{:expression, expression} | args]
+        if expression_tokens == [] do
+          {:error, line, {:unexpected_token, separator_token}}
+        else
+          with {:ok, expression} <- Expression.parse(expression_tokens) do
+            new_args = [{:expression, expression} | args]
 
-          case separator_token do
-            # Last arg
-            {:eol, _} -> {:ok, Enum.reverse(new_args), remaining_tokens}
-            # Another arg
-            {{:separator, ?,}, _} -> parse_call_args(remaining_tokens, new_args)
+            case separator_token do
+              # Last arg
+              :eol -> {:ok, Enum.reverse(new_args), remaining_tokens}
+              # Another arg
+              {:separator, ?,} -> parse_call_args(remaining_tokens, new_args)
+            end
           end
         end
     end

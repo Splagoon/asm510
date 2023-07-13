@@ -67,8 +67,71 @@ defmodule ASM510.Expression do
     end
   end
 
+  defguardp is_operand(token) when token in [:number, :identifier]
+
+  # parse_expression assumes the input tokens are in the expected grammar
+  defp validate_operand([{operand, line} | remaining_tokens = [_ | _]], paren_depth) do
+    case operand do
+      {:operator, :open_paren} ->
+        validate_operand(remaining_tokens, paren_depth + 1)
+
+      {:operator, :close_paren} ->
+        if paren_depth > 0 do
+          validate_operator(remaining_tokens, paren_depth - 1)
+        else
+          {:error, line, {:unexpected_token, operand}}
+        end
+
+      {:operator, operator} when is_unary(operator) ->
+        validate_operand(remaining_tokens, paren_depth)
+
+      {token, _} when is_operand(token) ->
+        validate_operator(remaining_tokens, paren_depth)
+
+      _ ->
+        {:error, line, {:unexpected_token, operand}}
+    end
+  end
+
+  defp validate_operand([{last_token, line}], paren_depth) do
+    case last_token do
+      {token, _} when is_operand(token) and paren_depth == 0 ->
+        :ok
+
+      {:operator, :close_paren} when paren_depth == 1 ->
+        :ok
+
+      _ ->
+        {:error, line, {:unexpected_token, last_token}}
+    end
+  end
+
+  defp validate_operator([{operator, line} | remaining_tokens = [_ | _]], paren_depth) do
+    case operator do
+      {:operator, :close_paren} ->
+        if paren_depth > 0 do
+          validate_operator(remaining_tokens, paren_depth - 1)
+        else
+          {:error, line, {:unexpected_token, operator}}
+        end
+
+      {:operator, operator} when operator != :open_paren ->
+        validate_operand(remaining_tokens, paren_depth)
+
+      _ ->
+        {:error, line, {:unexpected_token, operator}}
+    end
+  end
+
+  defp validate_operator([{{:operator, :close_paren}, _}], 1), do: :ok
+
+  defp validate_operator([{last_token, line}], _),
+    do: {:error, line, {:unexpected_token, last_token}}
+
   def parse(tokens) do
-    parse_expression(tokens, [], [])
+    with :ok <- validate_operand(tokens, 0) do
+      parse_expression(tokens, [], [])
+    end
   end
 
   @precedence_map %{
