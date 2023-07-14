@@ -142,7 +142,7 @@ defmodule ASM510.Lexer do
   defp count_until_separator("", count), do: count
 
   defp count_until_separator(<<c::utf8>> <> remaining_string, count) do
-    if is_whitespace(c) or is_separator(c) do
+    if is_whitespace(c) or is_separator(c) or is_operator(c) do
       count
     else
       count_until_separator(remaining_string, count + 1)

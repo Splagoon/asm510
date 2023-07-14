@@ -1,23 +1,29 @@
     .set START, 0x0DC0
+    .set LCD_RAM_START, 0x60
+    .set RAM_PAGE_SIZE, 0x10
+    .set SUBROUTINE_PAGE, 0x100
 
     # Subroutine: WAIT
     .set WAIT, 0x01
+    .set WAIT_OFFSET, 0x80
     .org WAIT
-    .word 0x80
-    .org 0x900
+    .word WAIT_OFFSET
+    .set WAIT_PAGE_START, SUBROUTINE_PAGE + (WAIT_OFFSET * 0x10)
+    .org WAIT_PAGE_START
     LAX 0
 WAIT_LOOP:
     # Skip to near end of page
-    .org 0x908
+    .org WAIT_PAGE_START + 8
     ADX 1
     T WAIT_LOOP
     RTN0
 
     # Subroutine: LCDS_ON
     .set LCDS_ON, 0x00
+    .set LCDS_ON_OFFSET, 0x00
     .org LCDS_ON
-    .word 0x00
-    .org 0x100
+    .word LCDS_ON_OFFSET
+    .org SUBROUTINE_PAGE + (LCDS_ON_OFFSET * 0x10)
 LCDS_ON_LOOP:
     SM 0
     TM WAIT
@@ -33,9 +39,10 @@ LCDS_ON_LOOP:
 
     # Subroutine: LCDS_OFF
     .set LCDS_OFF, 0x02
+    .set LCDS_OFF_OFFSET, 0x40
     .org LCDS_OFF
-    .word 0x40
-    .org 0x500
+    .word LCDS_OFF_OFFSET
+    .org SUBROUTINE_PAGE + (LCDS_OFF_OFFSET * 0x10)
 LCDS_OFF_LOOP:
     RM 0
     TM WAIT
@@ -53,12 +60,12 @@ LCDS_OFF_LOOP:
     .org START
 MAIN_LOOP:
     # Go to first LCD
-    LBL 0x60
+    LBL LCD_RAM_START
     TM LCDS_ON
-    LBL 0x70
+    LBL LCD_RAM_START + RAM_PAGE_SIZE
     TM LCDS_ON
-    LBL 0x60
+    LBL LCD_RAM_START
     TM LCDS_OFF
-    LBL 0x70
+    LBL LCD_RAM_START + RAM_PAGE_SIZE
     TM LCDS_OFF
     T MAIN_LOOP
