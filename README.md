@@ -2,7 +2,7 @@
 
 A simple assembler for the Sharp SM510, the 4-bit microcomputer that powered the original Game & Watch handhelds. Syntax is inspired by the GNU Assembler.
 
-Doesn't currently support macros or expressions, but maybe soon!
+Currently supports expressions, but not macros. (Maybe soon!)
 
 Not well documented yet, but see the [example program](test/input/test.s) to get an idea of the syntax.
 

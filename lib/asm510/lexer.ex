@@ -11,13 +11,15 @@ defmodule ASM510.Lexer do
   defguardp is_digit(c) when is_nonzero_digit(c) or c == ?0
 
   defguardp is_valid_identifier_start(c)
-            when c in ?A..?Z or c in ?a..?z or c == ?$ or c == ?_ or c == ?.
+            when c in ?A..?Z or c in ?a..?z or c in ~c[$_.]
 
   defguardp is_valid_identifier(c) when is_valid_identifier_start(c) or is_digit(c)
 
-  defguardp is_whitespace(c) when c == ?\s or c == ?\t
+  defguardp is_whitespace(c) when c in ~c[\s\t]
 
-  defguardp is_separator(c) when c == ?, or c == ?:
+  defguardp is_separator(c) when c in ~c[,:]
+
+  defguardp is_operator(c) when c in ~c[+-*/()<>%~|&^!]
 
   defp scan([], _, tokens), do: {:ok, Enum.reverse(tokens)}
 
@@ -39,6 +41,46 @@ defmodule ASM510.Lexer do
       # Comment
       "#" <> _ ->
         scan(["" | remaining_lines], line_number, tokens)
+
+      # 2-char left shift
+      "<<" <> remaining_string ->
+        {:ok, token} = operator_to_token(?<, line_number)
+
+        scan([remaining_string | remaining_lines], line_number, [
+          {token, line_number} | tokens
+        ])
+
+      # 2-char right shift
+      ">>" <> remaining_string ->
+        {:ok, token} = operator_to_token(?>, line_number)
+
+        scan([remaining_string | remaining_lines], line_number, [
+          {token, line_number} | tokens
+        ])
+
+      # Minus can be unary (negation) or binary (subtraction)
+      "-" <> remaining_string ->
+        operator =
+          case tokens do
+            # First token => negate
+            [] -> :negate
+            # Previous token is an operator (except ")") => negate
+            [{{:operator, operator}, _} | _] when operator != :close_paren -> :negate
+            # Otherwise => subtraction
+            _ -> :subtract
+          end
+
+        scan([remaining_string | remaining_lines], line_number, [
+          {{:operator, operator}, line_number} | tokens
+        ])
+
+      # Other 1-char expression operators
+      <<c::utf8>> <> remaining_string when is_operator(c) ->
+        with {:ok, token} <- operator_to_token(c, line_number) do
+          scan([remaining_string | remaining_lines], line_number, [
+            {token, line_number} | tokens
+          ])
+        end
 
       # Hexadecimal number
       "0x" <> remaining_string ->
@@ -100,10 +142,33 @@ defmodule ASM510.Lexer do
   defp count_until_separator("", count), do: count
 
   defp count_until_separator(<<c::utf8>> <> remaining_string, count) do
-    if is_whitespace(c) or is_separator(c) do
+    if is_whitespace(c) or is_separator(c) or is_operator(c) do
       count
     else
       count_until_separator(remaining_string, count + 1)
+    end
+  end
+
+  @operator_token_map %{
+    ?+ => :add,
+    ?* => :multiply,
+    ?/ => :divide,
+    ?( => :open_paren,
+    ?) => :close_paren,
+    ?< => :left_shift,
+    ?> => :right_shift,
+    ?% => :remainder,
+    ?~ => :complement,
+    ?| => :or,
+    ?& => :and,
+    ?^ => :xor,
+    ?! => :or_not
+  }
+  defp operator_to_token(c, line_number) do
+    with {:ok, operator} <- Map.fetch(@operator_token_map, c) do
+      {:ok, {:operator, operator}}
+    else
+      :error -> {:error, line_number, {:unknown_operator, c}}
     end
   end
 
@@ -111,5 +176,21 @@ defmodule ASM510.Lexer do
   def token_to_string({:separator, c}), do: "Separator \"#{to_string([c])}\""
   def token_to_string({:identifier, name}), do: "Identifier \"#{name}\""
   def token_to_string({:number, value}), do: "Number \"#{value}\""
+
+  def token_to_string({:operator, operator}) do
+    c =
+      case operator do
+        _ when operator in [:subtract, :negate] ->
+          ?-
+
+        _ ->
+          @operator_token_map
+          |> Enum.find(fn {_, val} -> val == operator end)
+          |> elem(0)
+      end
+
+    "Operator: #{to_string([c])}"
+  end
+
   def token_to_string(token), do: "Unknown token \"#{inspect(token)}\""
 end
