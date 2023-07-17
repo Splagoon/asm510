@@ -2,16 +2,21 @@ defmodule ASM510.Parser do
   alias ASM510.Expression
 
   def parse(tokens) do
-    parse_line(tokens, [])
+    with {:ok, syntax, remaining_tokens} <- parse_line(tokens, [], nil) do
+      case remaining_tokens do
+        [] -> {:ok, syntax}
+        [{token, line} | _] -> {:error, line, {:unexpected_token, token}}
+      end
+    end
   end
 
-  defp parse_line([], syntax), do: {:ok, Enum.reverse(syntax)}
+  defp parse_line([], syntax, nil), do: {:ok, Enum.reverse(syntax), []}
 
-  defp parse_line(tokens, syntax) do
+  defp parse_line(tokens, syntax, scope) do
     case tokens do
       # Empty line
       [{:eol, _} | remaining_tokens] ->
-        parse_line(remaining_tokens, syntax)
+        parse_line(remaining_tokens, syntax, scope)
 
       # Labels
       [
@@ -19,12 +24,18 @@ defmodule ASM510.Parser do
         {{:separator, ?:}, line},
         {:eol, line} | remaining_tokens
       ] ->
-        parse_line(remaining_tokens, [{{:label, label_name}, line} | syntax])
+        parse_line(remaining_tokens, [{{:label, label_name}, line} | syntax], scope)
 
-      # Calls
+      # Calls and directives
       [{{:identifier, opcode}, line} | remaining_tokens] ->
         with {:ok, args, new_remaining_tokens} <- parse_call_args(remaining_tokens, []) do
-          parse_line(new_remaining_tokens, [{{:call, opcode, args}, line} | syntax])
+          case opcode do
+            "." <> directive ->
+              handle_directive(directive, args, line, new_remaining_tokens, syntax, scope)
+
+            _ ->
+              parse_line(new_remaining_tokens, [{{:call, opcode, args}, line} | syntax], scope)
+          end
         end
 
       # Other
@@ -66,4 +77,47 @@ defmodule ASM510.Parser do
         end
     end
   end
+
+  defp handle_directive("word", [value], line, remaining_tokens, syntax, scope) do
+    directive = {:word, value}
+    parse_line(remaining_tokens, [{directive, line} | syntax], scope)
+  end
+
+  defp handle_directive(
+         "set",
+         # First arg to .set is expected to be an undefined symbol
+         [{:expression, [identifier: name]}, value],
+         line,
+         remaining_tokens,
+         syntax,
+         scope
+       ) do
+    directive = {:set, name, value}
+    parse_line(remaining_tokens, [{directive, line} | syntax], scope)
+  end
+
+  defp handle_directive("org", [value], line, remaining_tokens, syntax, scope) do
+    directive = {:org, value}
+    parse_line(remaining_tokens, [{directive, line} | syntax], scope)
+  end
+
+  defp handle_directive(
+         "irp",
+         [{:expression, [identifier: name]} | values],
+         line,
+         remaining_tokens,
+         syntax,
+         scope
+       ) do
+    with {:ok, loop_body, new_remaining_tokens} <-
+           parse_line(remaining_tokens, [], :loop) do
+      parse_line(new_remaining_tokens, [{{:irp, name, values, loop_body}, line} | syntax], scope)
+    end
+  end
+
+  defp handle_directive("endr", [], _, remaining_tokens, syntax, :loop),
+    do: {:ok, Enum.reverse(syntax), remaining_tokens}
+
+  defp handle_directive(directive, _, line, _, _, _),
+    do: {:error, line, {:invalid_directive, directive}}
 end

@@ -35,20 +35,38 @@ defmodule ASM510.Generator do
       {{:label, label_name}, _} ->
         {:ok, %State{state | env: Map.put_new(state.env, label_name, state.pc)}}
 
-      # First arg to .set is expected to be an undefined symbol
-      {{:call, ".set", [{:expression, [identifier: name]}, {:expression, value_expr}]}, _} ->
+      {{:set, name, {:expression, value_expr}}, _} ->
         with {:ok, value} <- Expression.evaluate(value_expr, state.env) do
           {:ok, %State{state | env: Map.put_new(state.env, name, value)}}
         end
 
-      {{:call, ".org", [{:expression, expr}]}, _} ->
+      {{:org, {:expression, expr}}, _} ->
         with {:ok, value} <- Expression.evaluate(expr, state.env) do
           {:ok, %State{state | pc: value}}
         end
 
-      {{:call, ".word", [{:expression, expr}]}, _} ->
+      {{:word, {:expression, expr}}, _} ->
         with {:ok, value} <- Expression.evaluate(expr, state.env) do
           put_byte(state, value) |> increment_pc() |> then(&{:ok, &1})
+        end
+
+      {{:irp, name, values, loop_body}, _} ->
+        loop =
+          for({:expression, value_expression} <- values, reduce: {:ok, state}) do
+            {:ok, state} ->
+              with {:ok, value} <- Expression.evaluate(value_expression, state.env) do
+                generate_all(loop_body, %State{
+                  state
+                  | env: Map.put(state.env, "\\#{name}", value)
+                })
+              end
+
+            error ->
+              error
+          end
+
+        with {:ok, new_state} <- loop do
+          {:ok, %State{new_state | env: Map.delete(state.env, "\\#{name}")}}
         end
 
       {{:call, opcode, args}, line_number} ->

@@ -10,10 +10,12 @@ defmodule ASM510.Lexer do
 
   defguardp is_digit(c) when is_nonzero_digit(c) or c == ?0
 
-  defguardp is_valid_identifier_start(c)
-            when c in ?A..?Z or c in ?a..?z or c in ~c[$_.]
+  defguardp is_letter(c) when c in ?A..?Z or c in ?a..?z
 
-  defguardp is_valid_identifier(c) when is_valid_identifier_start(c) or is_digit(c)
+  defguardp is_valid_identifier_start(c)
+            when is_letter(c) or c in ~c[$_.\\]
+
+  defguardp is_valid_identifier(c) when is_letter(c) or is_digit(c) or c == ?_
 
   defguardp is_whitespace(c) when c in ~c[\s\t]
 
@@ -121,7 +123,11 @@ defmodule ASM510.Lexer do
     {identifier, remaining_string} = String.split_at(string, count_until_separator(string, 0))
 
     if String.length(identifier) > 0 and
-         identifier |> String.to_charlist() |> Enum.all?(&is_valid_identifier/1) do
+         identifier
+         |> String.to_charlist()
+         |> then(fn [head | tail] ->
+           is_valid_identifier_start(head) and Enum.all?(tail, &is_valid_identifier/1)
+         end) do
       {:ok, identifier, remaining_string}
     else
       {:error, line_number, {:bad_identifier, identifier}}
