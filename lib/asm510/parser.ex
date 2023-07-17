@@ -118,6 +118,7 @@ defmodule ASM510.Parser do
       parse_line(new_remaining_tokens, [{{:irp, name, values, loop_body}, line} | syntax], scope)
     else
       {:error, 0, {:scope_not_closed, :loop}} -> {:error, line, {:scope_not_closed, :loop}}
+      error -> error
     end
   end
 
