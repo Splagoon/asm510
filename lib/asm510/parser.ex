@@ -12,6 +12,8 @@ defmodule ASM510.Parser do
 
   defp parse_line([], syntax, nil), do: {:ok, Enum.reverse(syntax), []}
 
+  defp parse_line([], _, scope), do: {:error, 0, {:scope_not_closed, scope}}
+
   defp parse_line(tokens, syntax, scope) do
     case tokens do
       # Empty line
@@ -85,15 +87,16 @@ defmodule ASM510.Parser do
 
   defp handle_directive(
          "set",
-         # First arg to .set is expected to be an undefined symbol
-         [{:expression, [identifier: name]}, value],
+         [name, value],
          line,
          remaining_tokens,
          syntax,
          scope
        ) do
-    directive = {:set, name, value}
-    parse_line(remaining_tokens, [{directive, line} | syntax], scope)
+    with {:ok, name} <- get_variable_name(name, line) do
+      directive = {:set, name, value}
+      parse_line(remaining_tokens, [{directive, line} | syntax], scope)
+    end
   end
 
   defp handle_directive("org", [value], line, remaining_tokens, syntax, scope) do
@@ -103,15 +106,18 @@ defmodule ASM510.Parser do
 
   defp handle_directive(
          "irp",
-         [{:expression, [identifier: name]} | values],
+         [name | values],
          line,
          remaining_tokens,
          syntax,
          scope
        ) do
-    with {:ok, loop_body, new_remaining_tokens} <-
+    with {:ok, name} <- get_variable_name(name, line),
+         {:ok, loop_body, new_remaining_tokens} <-
            parse_line(remaining_tokens, [], :loop) do
       parse_line(new_remaining_tokens, [{{:irp, name, values, loop_body}, line} | syntax], scope)
+    else
+      {:error, 0, {:scope_not_closed, :loop}} -> {:error, line, {:scope_not_closed, :loop}}
     end
   end
 
@@ -120,4 +126,20 @@ defmodule ASM510.Parser do
 
   defp handle_directive(directive, _, line, _, _, _),
     do: {:error, line, {:invalid_directive, directive}}
+
+  defp get_variable_name(expression, line) do
+    case expression do
+      {:expression, [identifier: name = <<c::utf8>> <> _]} ->
+        if c not in ~c[.\\] do
+          {:ok, name}
+        else
+          {:error, line, {:reserved_name, name}}
+        end
+
+      _ ->
+        {:error, line, :expected_name}
+    end
+  end
+
+  def directive_to_close_scope(:loop), do: ".endr"
 end

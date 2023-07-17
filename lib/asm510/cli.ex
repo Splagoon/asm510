@@ -59,8 +59,12 @@ defmodule ASM510.CLI do
     do: "Unexpected token: #{Lexer.token_to_string(token)}"
 
   defp error_message({:undefined_symbol, name}), do: "Undefined symbol: \"#{name}\""
-
   defp error_message({:invalid_directive, name}), do: "Invalid assembler directive: \"#{name}\""
+  defp error_message({:reserved_name, name}), do: "Reserved name: \"#{name}\""
+  defp error_message(:expected_name), do: "Expected name"
+
+  defp error_message({:scope_not_closed, scope}),
+    do: "No matching #{Parser.directive_to_close_scope(scope)} directive"
 
   # CLI errors
   defp error_message(:missing_input), do: "Missing input file"

@@ -84,4 +84,47 @@ defmodule ASM510.ParserTest do
       error -> flunk("Got error: #{inspect(error)}")
     end
   end
+
+  test "declare reserved name" do
+    test_input = """
+    .set .test, 0
+    """
+
+    with {:ok, tokens} <- Lexer.lex(test_input) do
+      assert Parser.parse(tokens) == {:error, 1, {:reserved_name, ".test"}}
+    else
+      error -> flunk("Got error: #{inspect(error)}")
+    end
+  end
+
+  test "invalid variable name" do
+    test_input = """
+    .irp 1 + 1, 2
+    """
+
+    with {:ok, tokens} <- Lexer.lex(test_input) do
+      assert Parser.parse(tokens) == {:error, 1, :expected_name}
+    else
+      error -> flunk("Got error: #{inspect(error)}")
+    end
+  end
+
+  test "invalid directive" do
+    test_tokens = [{{:identifier, ".xyzzy"}, 1}, {:eol, 1}]
+
+    assert Parser.parse(test_tokens) == {:error, 1, {:invalid_directive, "xyzzy"}}
+  end
+
+  test "unclosed loop" do
+    test_input = """
+    .irp x, 1
+    .word \\x
+    """
+
+    with {:ok, tokens} <- Lexer.lex(test_input) do
+      assert Parser.parse(tokens) == {:error, 1, {:scope_not_closed, :loop}}
+    else
+      error -> flunk("Got error: #{inspect(error)}")
+    end
+  end
 end
