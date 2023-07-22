@@ -125,30 +125,28 @@ defmodule ASM510.Parser do
   defp handle_directive("endr", [], _, remaining_tokens, syntax, :loop),
     do: {:ok, Enum.reverse(syntax), remaining_tokens}
 
-  defp handle_directive("if", [expression], line, remaining_tokens, syntax, scope) do
-    with {:ok, if_body, new_remaining_tokens, closer} <- parse_line(remaining_tokens, [], :if) do
-      case closer do
-        :endif ->
-          parse_line(
-            new_remaining_tokens,
-            [{{:if, expression, if_body, nil}, line} | syntax],
-            scope
-          )
+  defp handle_directive("if", [expression], line, remaining_tokens, syntax, scope),
+    do: parse_if_else(remaining_tokens, expression, line, syntax, scope)
 
-        :else ->
-          with {:ok, else_body, new_remaining_tokens, :endif} <-
-                 parse_line(new_remaining_tokens, [], :else) do
-            parse_line(
-              new_remaining_tokens,
-              [
-                {{:if, expression, if_body, else_body}, line} | syntax
-              ],
-              scope
-            )
-          end
-      end
-    end
-  end
+  defp handle_directive(
+         "ifdef",
+         [{:expression, [identifier: name]}],
+         line,
+         remaining_tokens,
+         syntax,
+         scope
+       ),
+       do: parse_if_else(remaining_tokens, {:defined?, name}, line, syntax, scope)
+
+  defp handle_directive(
+         "ifndef",
+         [{:expression, [identifier: name]}],
+         line,
+         remaining_tokens,
+         syntax,
+         scope
+       ),
+       do: parse_if_else(remaining_tokens, {:not_defined?, name}, line, syntax, scope)
 
   defp handle_directive("else", [], _, remaining_tokens, syntax, :if),
     do: {:ok, Enum.reverse(syntax), remaining_tokens, :else}
@@ -174,5 +172,31 @@ defmodule ASM510.Parser do
     end
   end
 
+  defp parse_if_else(remaining_tokens, condition, line, syntax, scope) do
+    with {:ok, if_body, new_remaining_tokens, closer} <- parse_line(remaining_tokens, [], :if) do
+      case closer do
+        :endif ->
+          parse_line(
+            new_remaining_tokens,
+            [{{:if, condition, if_body, nil}, line} | syntax],
+            scope
+          )
+
+        :else ->
+          with {:ok, else_body, new_remaining_tokens, :endif} <-
+                 parse_line(new_remaining_tokens, [], :else) do
+            parse_line(
+              new_remaining_tokens,
+              [
+                {{:if, condition, if_body, else_body}, line} | syntax
+              ],
+              scope
+            )
+          end
+      end
+    end
+  end
+
   def directive_to_close_scope(:loop), do: ".endr"
+  def directive_to_close_scope(d) when d in [:if, :else], do: ".endif"
 end

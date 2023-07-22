@@ -7,10 +7,10 @@ defmodule ASM510.Generator do
 
   alias ASM510.{Generator.State, Opcodes, Expression}
 
-  def generate(syntax) do
+  def generate(syntax, rom_size \\ 4096) do
     with {:ok, state} <- generate_all(syntax, %State{}) do
       state.data
-      |> assemble_rom(4096)
+      |> assemble_rom(rom_size)
       |> then(&{:ok, &1})
     end
   end
@@ -69,11 +69,25 @@ defmodule ASM510.Generator do
           {:ok, %State{new_state | env: Map.delete(state.env, "\\#{name}")}}
         end
 
-      {{:if, expression, if_body, else_body}, _} ->
-        with {:ok, expression_value} <- Expression.evaluate(expression, state.env) do
+      {{:if, condition, if_body, else_body}, _} ->
+        condition_true =
+          case condition do
+            {:expression, expression} ->
+              with {:ok, expression_value} <- Expression.evaluate(expression, state.env) do
+                {:ok, expression_value != 0}
+              end
+
+            {:defined?, name} ->
+              {:ok, Map.has_key?(state.env, name)}
+
+            {:not_defined?, name} ->
+              {:ok, not Map.has_key?(state.env, name)}
+          end
+
+        with {:ok, condition_true} <- condition_true do
           cond do
             # True case
-            expression_value != 0 -> generate_all(if_body, state)
+            condition_true -> generate_all(if_body, state)
             # False case w/ else branch
             not is_nil(else_body) -> generate_all(else_body, state)
             # False case w/o else branch (do nothing)

@@ -117,4 +117,16 @@ defmodule ASM510.ExpressionTest do
 
     assert expression == {:error, 1, {:unexpected_token, {:operator, :close_paren}}}
   end
+
+  test "variable reference" do
+    # x
+    tokens = [{{:identifier, "x"}, 1}]
+
+    with {:ok, expression} <- Expression.parse(tokens),
+         {:ok, result} <- Expression.evaluate(expression, %{"x" => 123}) do
+      assert result == 123
+    else
+      error -> flunk("Got error: #{inspect(error)}")
+    end
+  end
 end
