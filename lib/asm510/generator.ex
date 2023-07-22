@@ -69,6 +69,18 @@ defmodule ASM510.Generator do
           {:ok, %State{new_state | env: Map.delete(state.env, "\\#{name}")}}
         end
 
+      {{:if, expression, if_body, else_body}, _} ->
+        with {:ok, expression_value} <- Expression.evaluate(expression, state.env) do
+          cond do
+            # True case
+            expression_value != 0 -> generate_all(if_body, state)
+            # False case w/ else branch
+            not is_nil(else_body) -> generate_all(else_body, state)
+            # False case w/o else branch (do nothing)
+            true -> {:ok, state}
+          end
+        end
+
       {{:call, opcode, args}, line_number} ->
         arg_values_result =
           args

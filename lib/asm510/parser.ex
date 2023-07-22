@@ -125,6 +125,38 @@ defmodule ASM510.Parser do
   defp handle_directive("endr", [], _, remaining_tokens, syntax, :loop),
     do: {:ok, Enum.reverse(syntax), remaining_tokens}
 
+  defp handle_directive("if", [expression], line, remaining_tokens, syntax, scope) do
+    with {:ok, if_body, new_remaining_tokens, closer} <- parse_line(remaining_tokens, [], :if) do
+      case closer do
+        :endif ->
+          parse_line(
+            new_remaining_tokens,
+            [{{:if, expression, if_body, nil}, line} | syntax],
+            scope
+          )
+
+        :else ->
+          with {:ok, else_body, new_remaining_tokens, :endif} <-
+                 parse_line(new_remaining_tokens, [], :else) do
+            parse_line(
+              new_remaining_tokens,
+              [
+                {{:if, expression, if_body, else_body}, line} | syntax
+              ],
+              scope
+            )
+          end
+      end
+    end
+  end
+
+  defp handle_directive("else", [], _, remaining_tokens, syntax, :if),
+    do: {:ok, Enum.reverse(syntax), remaining_tokens, :else}
+
+  defp handle_directive("endif", [], _, remaining_tokens, syntax, scope)
+       when scope in [:if, :else],
+       do: {:ok, Enum.reverse(syntax), remaining_tokens, :endif}
+
   defp handle_directive(directive, _, line, _, _, _),
     do: {:error, line, {:invalid_directive, directive}}
 

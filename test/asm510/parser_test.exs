@@ -127,4 +127,40 @@ defmodule ASM510.ParserTest do
       error -> flunk("Got error: #{inspect(error)}")
     end
   end
+
+  test "if directive" do
+    test_input = """
+    .if 1
+    .word 1
+    .endif
+    """
+
+    with {:ok, tokens} <- Lexer.lex(test_input) do
+      assert Parser.parse(tokens) ==
+               {:ok,
+                [
+                  {{:if, {:expression, [number: 1]}, [{{:word, {:expression, [number: 1]}}, 2}],
+                    nil}, 1}
+                ]}
+    end
+  end
+
+  test "if/else directives" do
+    test_input = """
+    .if 1
+    .word 1
+    .else
+    .word 0
+    .endif
+    """
+
+    with {:ok, tokens} <- Lexer.lex(test_input) do
+      assert Parser.parse(tokens) ==
+               {:ok,
+                [
+                  {{:if, {:expression, [number: 1]}, [{{:word, {:expression, [number: 1]}}, 2}],
+                    [{{:word, {:expression, [number: 0]}}, 4}]}, 1}
+                ]}
+    end
+  end
 end
