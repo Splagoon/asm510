@@ -37,7 +37,7 @@ defmodule ASM510.Generator do
 
       {{:set, name, {:expression, value_expr}}, _} ->
         with {:ok, value} <- Expression.evaluate(value_expr, state.env) do
-          {:ok, %State{state | env: Map.put_new(state.env, name, value)}}
+          {:ok, %State{state | env: Map.put(state.env, name, value)}}
         end
 
       {{:org, {:expression, expr}}, _} ->
@@ -48,6 +48,46 @@ defmodule ASM510.Generator do
       {{:word, {:expression, expr}}, _} ->
         with {:ok, value} <- Expression.evaluate(expr, state.env) do
           put_byte(state, value) |> increment_pc() |> then(&{:ok, &1})
+        end
+
+      {:err, line} ->
+        {:error, line, :err_directive}
+
+      {{:skip, {:expression, size_expr}, {:expression, fill_expr}}, _} ->
+        with {:ok, size_value} <- Expression.evaluate(size_expr, state.env),
+             {:ok, fill_value} <- Expression.evaluate(fill_expr, state.env) do
+          case size_value do
+            0 ->
+              # Do nothing
+              {:ok, state}
+
+            _ ->
+              for _ <- 1..size_value, reduce: {:ok, state} do
+                {:ok, state} ->
+                  put_byte(state, fill_value) |> increment_pc() |> then(&{:ok, &1})
+
+                error ->
+                  error
+              end
+          end
+        end
+
+      {{:rept, {:expression, count_expr}, loop_body}, _} ->
+        with {:ok, count_value} <- Expression.evaluate(count_expr, state.env) do
+          case count_value do
+            0 ->
+              # Do nothing
+              {:ok, state}
+
+            _ ->
+              for _ <- 1..count_value, reduce: {:ok, state} do
+                {:ok, state} ->
+                  generate_all(loop_body, state)
+
+                error ->
+                  error
+              end
+          end
         end
 
       {{:irp, name, values, loop_body}, _} ->

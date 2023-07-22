@@ -104,6 +104,31 @@ defmodule ASM510.Parser do
     parse_line(remaining_tokens, [{directive, line} | syntax], scope)
   end
 
+  defp handle_directive("err", [], line, remaining_tokens, syntax, scope) do
+    directive = :err
+    parse_line(remaining_tokens, [{directive, line} | syntax], scope)
+  end
+
+  defp handle_directive("skip", [size], line, remaining_tokens, syntax, scope) do
+    directive = {:skip, size, {:expression, [number: 0]}}
+    parse_line(remaining_tokens, [{directive, line} | syntax], scope)
+  end
+
+  defp handle_directive("skip", [size, fill], line, remaining_tokens, syntax, scope) do
+    directive = {:skip, size, fill}
+    parse_line(remaining_tokens, [{directive, line} | syntax], scope)
+  end
+
+  defp handle_directive("rept", [count], line, remaining_tokens, syntax, scope) do
+    with {:ok, loop_body, new_remaining_tokens} <- parse_line(remaining_tokens, [], :loop) do
+      directive = {:rept, count, loop_body}
+      parse_line(new_remaining_tokens, [{directive, line} | syntax], scope)
+    else
+      {:error, 0, {:scope_not_closed, :loop}} -> {:error, line, {:scope_not_closed, :loop}}
+      error -> error
+    end
+  end
+
   defp handle_directive(
          "irp",
          [name | values],
@@ -115,7 +140,8 @@ defmodule ASM510.Parser do
     with {:ok, name} <- get_variable_name(name, line),
          {:ok, loop_body, new_remaining_tokens} <-
            parse_line(remaining_tokens, [], :loop) do
-      parse_line(new_remaining_tokens, [{{:irp, name, values, loop_body}, line} | syntax], scope)
+      directive = {:irp, name, values, loop_body}
+      parse_line(new_remaining_tokens, [{directive, line} | syntax], scope)
     else
       {:error, 0, {:scope_not_closed, :loop}} -> {:error, line, {:scope_not_closed, :loop}}
       error -> error
@@ -192,8 +218,20 @@ defmodule ASM510.Parser do
               ],
               scope
             )
+          else
+            {:error, 0, {:scope_not_closed, :else}} ->
+              {:error, line, {:scope_not_closed, :else}}
+
+            error ->
+              error
           end
       end
+    else
+      {:error, 0, {:scope_not_closed, :if}} ->
+        {:error, line, {:scope_not_closed, :if}}
+
+      error ->
+        error
     end
   end
 

@@ -13,7 +13,7 @@
     LAX 0
 WAIT_LOOP:
     # Skip to near end of page
-    .org WAIT_PAGE_START + 8
+    .skip 47
     ADX 1
     T WAIT_LOOP
     RTN0

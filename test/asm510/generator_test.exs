@@ -42,7 +42,7 @@ defmodule ASM510.GeneratorTest do
     # Both of these programs should be equivalent
     input1 = """
     .ifdef x
-    .set x, 0x00
+    .err
     .else
     .set x, 0x12
     .endif
@@ -53,7 +53,7 @@ defmodule ASM510.GeneratorTest do
     .ifndef x
     .set x, 0x12
     .else
-    .set x, 0x00
+    .err
     .endif
     .word x
     """
@@ -66,6 +66,34 @@ defmodule ASM510.GeneratorTest do
       else
         error -> flunk("Got error: #{inspect(error)}")
       end
+    end
+  end
+
+  test "err directive" do
+    test_input = ".err"
+
+    with {:ok, tokens} <- Lexer.lex(test_input),
+         {:ok, syntax} <- Parser.parse(tokens) do
+      assert Generator.generate(syntax) == {:error, 1, :err_directive}
+    end
+  end
+
+  test "rept directive" do
+    test_input = """
+    .set x, 0
+    .rept 3
+    .org 0
+    .set x, x + 1
+    .word x
+    .endr
+    """
+
+    with {:ok, tokens} <- Lexer.lex(test_input),
+         {:ok, syntax} <- Parser.parse(tokens),
+         {:ok, rom} <- Generator.generate(syntax, 1) do
+      assert rom == <<3::8>>
+    else
+      error -> flunk("Got error: #{inspect(error)}")
     end
   end
 end

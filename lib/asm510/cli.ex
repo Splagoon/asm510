@@ -66,6 +66,10 @@ defmodule ASM510.CLI do
   defp error_message({:scope_not_closed, scope}),
     do: "No matching #{Parser.directive_to_close_scope(scope)} directive"
 
+  # Generator errors
+  defp error_message(:err_directive),
+    do: "Reached .err directive"
+
   # CLI errors
   defp error_message(:missing_input), do: "Missing input file"
   defp error_message(:too_many_inputs), do: "More than one input file was specified"
