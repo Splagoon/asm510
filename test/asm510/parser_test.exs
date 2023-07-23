@@ -163,4 +163,60 @@ defmodule ASM510.ParserTest do
                 ]}
     end
   end
+
+  test "scope not closed" do
+    inputs = [
+      {"""
+       .if 1
+       .word 1
+       """, :if},
+      {"""
+       .ifndef foo
+       .err
+       .else
+       .err
+       """, :else},
+      {"""
+       .rept 3
+       .word 3
+       """, :loop},
+      {"""
+       .irp x, 4, 5
+       .if \\x - 4
+       .skip 1
+       .endif
+       .word \\x
+       """, :loop}
+    ]
+
+    for {input, scope} <- inputs do
+      with {:ok, tokens} <- Lexer.lex(input) do
+        assert Parser.parse(tokens) == {:error, 1, {:scope_not_closed, scope}}
+      else
+        error -> flunk("Got error: #{inspect(error)}")
+      end
+    end
+  end
+
+  test "error in scope body" do
+    test_input = """
+    .ifdef test
+    .err
+    .else
+    .if 1
+    .irp x, 1, 2, 3
+    .rept 3
+    .xyzzy
+    .endr
+    .endr
+    .endif
+    .endif
+    """
+
+    with {:ok, tokens} <- Lexer.lex(test_input) do
+      assert Parser.parse(tokens) == {:error, 7, {:invalid_directive, "xyzzy"}}
+    else
+      error -> flunk("Got error: #{inspect(error)}")
+    end
+  end
 end

@@ -28,7 +28,7 @@ defmodule ASM510.ExpressionTest do
       |> Enum.map(&{&1, 1})
 
     with {:ok, expression} <- Expression.parse(tokens),
-         {:ok, result} <- Expression.evaluate(expression, %{}) do
+         {:ok, result} <- Expression.evaluate(expression, 0, %{}) do
       assert result == 40
     else
       error -> flunk("Got error: #{inspect(error)}")
@@ -84,7 +84,7 @@ defmodule ASM510.ExpressionTest do
       |> Enum.map(&{&1, 1})
 
     with {:ok, expression} <- Expression.parse(tokens),
-         {:ok, result} <- Expression.evaluate(expression, %{}) do
+         {:ok, result} <- Expression.evaluate(expression, 0, %{}) do
       assert result == 3
     else
       error -> flunk("Got error: #{inspect(error)}")
@@ -123,7 +123,7 @@ defmodule ASM510.ExpressionTest do
     tokens = [{{:identifier, "x"}, 1}]
 
     with {:ok, expression} <- Expression.parse(tokens),
-         {:ok, result} <- Expression.evaluate(expression, %{"x" => 123}) do
+         {:ok, result} <- Expression.evaluate(expression, 0, %{"x" => 123}) do
       assert result == 123
     else
       error -> flunk("Got error: #{inspect(error)}")

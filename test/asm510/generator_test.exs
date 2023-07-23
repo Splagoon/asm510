@@ -96,4 +96,55 @@ defmodule ASM510.GeneratorTest do
       error -> flunk("Got error: #{inspect(error)}")
     end
   end
+
+  test "error in scope body" do
+    test_input = """
+    .ifdef test
+    .err
+    .else
+    .if 1
+    .irp x, 1, 2, 3
+    .rept 3
+    .word undefined
+    .endr
+    .endr
+    .endif
+    .endif
+    """
+
+    with {:ok, tokens} <- Lexer.lex(test_input),
+         {:ok, syntax} <- Parser.parse(tokens) do
+      assert Generator.generate(syntax) == {:error, 7, {:undefined_symbol, "undefined"}}
+    else
+      error -> flunk("Got error: #{inspect(error)}")
+    end
+  end
+
+  test "no-op directives" do
+    inputs = [
+      """
+      .ifdef undefined
+      .err
+      .endif
+      """,
+      """
+      .skip 0
+      """,
+      """
+      .rept 0
+      .err
+      .endr
+      """
+    ]
+
+    for input <- inputs do
+      with {:ok, tokens} <- Lexer.lex(input),
+           {:ok, syntax} <- Parser.parse(tokens),
+           {:ok, rom} <- Generator.generate(syntax, 1) do
+        assert rom == <<0::8>>
+      else
+        error -> flunk("Got error: #{inspect(error)}")
+      end
+    end
+  end
 end
