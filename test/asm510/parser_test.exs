@@ -1,6 +1,8 @@
 defmodule ASM510.ParserTest do
   use ExUnit.Case
 
+  alias ASM510.{Lexer, Parser}
+
   test "unexpected token" do
     for test_tokens <- [
           # :
@@ -10,7 +12,7 @@ defmodule ASM510.ParserTest do
           # call 1,
           [{{:identifier, "call"}, 1}, {{:number, 1}, 1}, {{:separator, ?,}, 1}, {:eol, 1}]
         ] do
-      syntax = ASM510.Parser.parse(test_tokens)
+      syntax = Parser.parse(test_tokens)
 
       assert match?({:error, 1, {:unexpected_token, _}}, syntax)
     end
@@ -28,7 +30,7 @@ defmodule ASM510.ParserTest do
       {:eol, 1}
     ]
 
-    syntax = ASM510.Parser.parse(test_tokens)
+    syntax = Parser.parse(test_tokens)
 
     assert syntax ==
              {:ok,
@@ -40,5 +42,181 @@ defmodule ASM510.ParserTest do
                     {:expression, [number: 2]}
                   ]}, 1}
               ]}
+  end
+
+  test "nested loops" do
+    test_input = """
+    .word 1
+    .irp x, 2, 3, 4
+    .irp y, 5, 6, 7
+    .word \\x
+    .word \\y
+    .endr
+    .word 8
+    .endr
+    """
+
+    with {:ok, tokens} <- Lexer.lex(test_input),
+         {:ok, syntax} <- Parser.parse(tokens) do
+      assert syntax == [
+               {{:word, {:expression, [number: 1]}}, 1},
+               {{:irp, "x",
+                 [
+                   expression: [number: 2],
+                   expression: [number: 3],
+                   expression: [number: 4]
+                 ],
+                 [
+                   {{:irp, "y",
+                     [
+                       expression: [number: 5],
+                       expression: [number: 6],
+                       expression: [number: 7]
+                     ],
+                     [
+                       {{:word, {:expression, [identifier: "\\x"]}}, 4},
+                       {{:word, {:expression, [identifier: "\\y"]}}, 5}
+                     ]}, 3},
+                   {{:word, {:expression, [number: 8]}}, 7}
+                 ]}, 2}
+             ]
+    else
+      error -> flunk("Got error: #{inspect(error)}")
+    end
+  end
+
+  test "declare reserved name" do
+    test_input = """
+    .set .test, 0
+    """
+
+    with {:ok, tokens} <- Lexer.lex(test_input) do
+      assert Parser.parse(tokens) == {:error, 1, {:reserved_name, ".test"}}
+    else
+      error -> flunk("Got error: #{inspect(error)}")
+    end
+  end
+
+  test "invalid variable name" do
+    test_input = """
+    .irp 1 + 1, 2
+    """
+
+    with {:ok, tokens} <- Lexer.lex(test_input) do
+      assert Parser.parse(tokens) == {:error, 1, :expected_name}
+    else
+      error -> flunk("Got error: #{inspect(error)}")
+    end
+  end
+
+  test "invalid directive" do
+    test_tokens = [{{:identifier, ".xyzzy"}, 1}, {:eol, 1}]
+
+    assert Parser.parse(test_tokens) == {:error, 1, {:invalid_directive, "xyzzy"}}
+  end
+
+  test "unclosed loop" do
+    test_input = """
+    .irp x, 1
+    .word \\x
+    """
+
+    with {:ok, tokens} <- Lexer.lex(test_input) do
+      assert Parser.parse(tokens) == {:error, 1, {:scope_not_closed, :loop}}
+    else
+      error -> flunk("Got error: #{inspect(error)}")
+    end
+  end
+
+  test "if directive" do
+    test_input = """
+    .if 1
+    .word 1
+    .endif
+    """
+
+    with {:ok, tokens} <- Lexer.lex(test_input) do
+      assert Parser.parse(tokens) ==
+               {:ok,
+                [
+                  {{:if, {:expression, [number: 1]}, [{{:word, {:expression, [number: 1]}}, 2}],
+                    nil}, 1}
+                ]}
+    end
+  end
+
+  test "if/else directives" do
+    test_input = """
+    .if 1
+    .word 1
+    .else
+    .word 0
+    .endif
+    """
+
+    with {:ok, tokens} <- Lexer.lex(test_input) do
+      assert Parser.parse(tokens) ==
+               {:ok,
+                [
+                  {{:if, {:expression, [number: 1]}, [{{:word, {:expression, [number: 1]}}, 2}],
+                    [{{:word, {:expression, [number: 0]}}, 4}]}, 1}
+                ]}
+    end
+  end
+
+  test "scope not closed" do
+    inputs = [
+      {"""
+       .if 1
+       .word 1
+       """, :if},
+      {"""
+       .ifndef foo
+       .err
+       .else
+       .err
+       """, :else},
+      {"""
+       .rept 3
+       .word 3
+       """, :loop},
+      {"""
+       .irp x, 4, 5
+       .if \\x - 4
+       .skip 1
+       .endif
+       .word \\x
+       """, :loop}
+    ]
+
+    for {input, scope} <- inputs do
+      with {:ok, tokens} <- Lexer.lex(input) do
+        assert Parser.parse(tokens) == {:error, 1, {:scope_not_closed, scope}}
+      else
+        error -> flunk("Got error: #{inspect(error)}")
+      end
+    end
+  end
+
+  test "error in scope body" do
+    test_input = """
+    .ifdef test
+    .err
+    .else
+    .if 1
+    .irp x, 1, 2, 3
+    .rept 3
+    .xyzzy
+    .endr
+    .endr
+    .endif
+    .endif
+    """
+
+    with {:ok, tokens} <- Lexer.lex(test_input) do
+      assert Parser.parse(tokens) == {:error, 7, {:invalid_directive, "xyzzy"}}
+    else
+      error -> flunk("Got error: #{inspect(error)}")
+    end
   end
 end

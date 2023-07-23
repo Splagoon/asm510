@@ -2,16 +2,23 @@ defmodule ASM510.Parser do
   alias ASM510.Expression
 
   def parse(tokens) do
-    parse_line(tokens, [])
+    with {:ok, syntax, remaining_tokens} <- parse_line(tokens, [], nil) do
+      case remaining_tokens do
+        [] -> {:ok, syntax}
+        [{token, line} | _] -> {:error, line, {:unexpected_token, token}}
+      end
+    end
   end
 
-  defp parse_line([], syntax), do: {:ok, Enum.reverse(syntax)}
+  defp parse_line([], syntax, nil), do: {:ok, Enum.reverse(syntax), []}
 
-  defp parse_line(tokens, syntax) do
+  defp parse_line([], _, scope), do: {:error, 0, {:scope_not_closed, scope}}
+
+  defp parse_line(tokens, syntax, scope) do
     case tokens do
       # Empty line
       [{:eol, _} | remaining_tokens] ->
-        parse_line(remaining_tokens, syntax)
+        parse_line(remaining_tokens, syntax, scope)
 
       # Labels
       [
@@ -19,12 +26,18 @@ defmodule ASM510.Parser do
         {{:separator, ?:}, line},
         {:eol, line} | remaining_tokens
       ] ->
-        parse_line(remaining_tokens, [{{:label, label_name}, line} | syntax])
+        parse_line(remaining_tokens, [{{:label, label_name}, line} | syntax], scope)
 
-      # Calls
+      # Calls and directives
       [{{:identifier, opcode}, line} | remaining_tokens] ->
         with {:ok, args, new_remaining_tokens} <- parse_call_args(remaining_tokens, []) do
-          parse_line(new_remaining_tokens, [{{:call, opcode, args}, line} | syntax])
+          case opcode do
+            "." <> directive ->
+              handle_directive(directive, args, line, new_remaining_tokens, syntax, scope)
+
+            _ ->
+              parse_line(new_remaining_tokens, [{{:call, opcode, args}, line} | syntax], scope)
+          end
         end
 
       # Other
@@ -66,4 +79,162 @@ defmodule ASM510.Parser do
         end
     end
   end
+
+  defp handle_directive("word", [value], line, remaining_tokens, syntax, scope) do
+    directive = {:word, value}
+    parse_line(remaining_tokens, [{directive, line} | syntax], scope)
+  end
+
+  defp handle_directive(
+         "set",
+         [name, value],
+         line,
+         remaining_tokens,
+         syntax,
+         scope
+       ) do
+    with {:ok, name} <- get_variable_name(name, line) do
+      directive = {:set, name, value}
+      parse_line(remaining_tokens, [{directive, line} | syntax], scope)
+    end
+  end
+
+  defp handle_directive("org", [value], line, remaining_tokens, syntax, scope) do
+    directive = {:org, value}
+    parse_line(remaining_tokens, [{directive, line} | syntax], scope)
+  end
+
+  defp handle_directive("err", [], line, remaining_tokens, syntax, scope) do
+    directive = :err
+    parse_line(remaining_tokens, [{directive, line} | syntax], scope)
+  end
+
+  defp handle_directive("skip", [size], line, remaining_tokens, syntax, scope) do
+    directive = {:skip, size, {:expression, [number: 0]}}
+    parse_line(remaining_tokens, [{directive, line} | syntax], scope)
+  end
+
+  defp handle_directive("skip", [size, fill], line, remaining_tokens, syntax, scope) do
+    directive = {:skip, size, fill}
+    parse_line(remaining_tokens, [{directive, line} | syntax], scope)
+  end
+
+  defp handle_directive("rept", [count], line, remaining_tokens, syntax, scope) do
+    with {:ok, loop_body, new_remaining_tokens} <- parse_line(remaining_tokens, [], :loop) do
+      directive = {:rept, count, loop_body}
+      parse_line(new_remaining_tokens, [{directive, line} | syntax], scope)
+    else
+      {:error, 0, {:scope_not_closed, :loop}} -> {:error, line, {:scope_not_closed, :loop}}
+      error -> error
+    end
+  end
+
+  defp handle_directive(
+         "irp",
+         [name | values],
+         line,
+         remaining_tokens,
+         syntax,
+         scope
+       ) do
+    with {:ok, name} <- get_variable_name(name, line),
+         {:ok, loop_body, new_remaining_tokens} <-
+           parse_line(remaining_tokens, [], :loop) do
+      directive = {:irp, name, values, loop_body}
+      parse_line(new_remaining_tokens, [{directive, line} | syntax], scope)
+    else
+      {:error, 0, {:scope_not_closed, :loop}} -> {:error, line, {:scope_not_closed, :loop}}
+      error -> error
+    end
+  end
+
+  defp handle_directive("endr", [], _, remaining_tokens, syntax, :loop),
+    do: {:ok, Enum.reverse(syntax), remaining_tokens}
+
+  defp handle_directive("if", [expression], line, remaining_tokens, syntax, scope),
+    do: parse_if_else(remaining_tokens, expression, line, syntax, scope)
+
+  defp handle_directive(
+         "ifdef",
+         [{:expression, [identifier: name]}],
+         line,
+         remaining_tokens,
+         syntax,
+         scope
+       ),
+       do: parse_if_else(remaining_tokens, {:defined?, name}, line, syntax, scope)
+
+  defp handle_directive(
+         "ifndef",
+         [{:expression, [identifier: name]}],
+         line,
+         remaining_tokens,
+         syntax,
+         scope
+       ),
+       do: parse_if_else(remaining_tokens, {:not_defined?, name}, line, syntax, scope)
+
+  defp handle_directive("else", [], _, remaining_tokens, syntax, :if),
+    do: {:ok, Enum.reverse(syntax), remaining_tokens, :else}
+
+  defp handle_directive("endif", [], _, remaining_tokens, syntax, scope)
+       when scope in [:if, :else],
+       do: {:ok, Enum.reverse(syntax), remaining_tokens, :endif}
+
+  defp handle_directive(directive, _, line, _, _, _),
+    do: {:error, line, {:invalid_directive, directive}}
+
+  defp get_variable_name(expression, line) do
+    case expression do
+      {:expression, [identifier: name = <<c::utf8>> <> _]} ->
+        if c not in ~c[.\\] do
+          {:ok, name}
+        else
+          {:error, line, {:reserved_name, name}}
+        end
+
+      _ ->
+        {:error, line, :expected_name}
+    end
+  end
+
+  defp parse_if_else(remaining_tokens, condition, line, syntax, scope) do
+    with {:ok, if_body, new_remaining_tokens, closer} <- parse_line(remaining_tokens, [], :if) do
+      case closer do
+        :endif ->
+          parse_line(
+            new_remaining_tokens,
+            [{{:if, condition, if_body, nil}, line} | syntax],
+            scope
+          )
+
+        :else ->
+          with {:ok, else_body, new_remaining_tokens, :endif} <-
+                 parse_line(new_remaining_tokens, [], :else) do
+            parse_line(
+              new_remaining_tokens,
+              [
+                {{:if, condition, if_body, else_body}, line} | syntax
+              ],
+              scope
+            )
+          else
+            {:error, 0, {:scope_not_closed, :else}} ->
+              {:error, line, {:scope_not_closed, :else}}
+
+            error ->
+              error
+          end
+      end
+    else
+      {:error, 0, {:scope_not_closed, :if}} ->
+        {:error, line, {:scope_not_closed, :if}}
+
+      error ->
+        error
+    end
+  end
+
+  def directive_to_close_scope(:loop), do: ".endr"
+  def directive_to_close_scope(d) when d in [:if, :else], do: ".endif"
 end

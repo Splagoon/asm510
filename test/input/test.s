@@ -13,7 +13,7 @@
     LAX 0
 WAIT_LOOP:
     # Skip to near end of page
-    .org WAIT_PAGE_START + 8
+    .skip 47
     ADX 1
     T WAIT_LOOP
     RTN0
@@ -25,14 +25,10 @@ WAIT_LOOP:
     .word LCDS_ON_OFFSET
     .org SUBROUTINE_PAGE + (LCDS_ON_OFFSET * 0x10)
 LCDS_ON_LOOP:
-    SM 0
+    .irp bit, 0, 1, 2, 3
+    SM \bit
     TM WAIT
-    SM 1
-    TM WAIT
-    SM 2
-    TM WAIT
-    SM 3
-    TM WAIT
+    .endr
     INCB
     T LCDS_ON_LOOP
     RTN0
@@ -44,14 +40,10 @@ LCDS_ON_LOOP:
     .word LCDS_OFF_OFFSET
     .org SUBROUTINE_PAGE + (LCDS_OFF_OFFSET * 0x10)
 LCDS_OFF_LOOP:
-    RM 0
+    .irp bit, 0, 1, 2, 3
+    RM \bit
     TM WAIT
-    RM 1
-    TM WAIT
-    RM 2
-    TM WAIT
-    RM 3
-    TM WAIT
+    .endr
     INCB
     T LCDS_OFF_LOOP
     RTN0
@@ -59,13 +51,10 @@ LCDS_OFF_LOOP:
     # Entrypoint
     .org START
 MAIN_LOOP:
-    # Go to first LCD
-    LBL LCD_RAM_START
-    TM LCDS_ON
-    LBL LCD_RAM_START + RAM_PAGE_SIZE
-    TM LCDS_ON
-    LBL LCD_RAM_START
-    TM LCDS_OFF
-    LBL LCD_RAM_START + RAM_PAGE_SIZE
-    TM LCDS_OFF
+    .irp lcd_sub, LCDS_ON, LCDS_OFF
+    .irp ram_offset, LCD_RAM_START, LCD_RAM_START + RAM_PAGE_SIZE
+    LBL \ram_offset
+    TM \lcd_sub
+    .endr
+    .endr
     T MAIN_LOOP

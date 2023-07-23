@@ -7,10 +7,10 @@ defmodule ASM510.Generator do
 
   alias ASM510.{Generator.State, Opcodes, Expression}
 
-  def generate(syntax) do
+  def generate(syntax, rom_size \\ 4096) do
     with {:ok, state} <- generate_all(syntax, %State{}) do
       state.data
-      |> assemble_rom(4096)
+      |> assemble_rom(rom_size)
       |> then(&{:ok, &1})
     end
   end
@@ -35,27 +35,111 @@ defmodule ASM510.Generator do
       {{:label, label_name}, _} ->
         {:ok, %State{state | env: Map.put_new(state.env, label_name, state.pc)}}
 
-      # First arg to .set is expected to be an undefined symbol
-      {{:call, ".set", [{:expression, [identifier: name]}, {:expression, value_expr}]}, _} ->
-        with {:ok, value} <- Expression.evaluate(value_expr, state.env) do
-          {:ok, %State{state | env: Map.put_new(state.env, name, value)}}
+      {{:set, name, {:expression, value_expr}}, line} ->
+        with {:ok, value} <- Expression.evaluate(value_expr, line, state.env) do
+          {:ok, %State{state | env: Map.put(state.env, name, value)}}
         end
 
-      {{:call, ".org", [{:expression, expr}]}, _} ->
-        with {:ok, value} <- Expression.evaluate(expr, state.env) do
+      {{:org, {:expression, expr}}, line} ->
+        with {:ok, value} <- Expression.evaluate(expr, line, state.env) do
           {:ok, %State{state | pc: value}}
         end
 
-      {{:call, ".word", [{:expression, expr}]}, _} ->
-        with {:ok, value} <- Expression.evaluate(expr, state.env) do
+      {{:word, {:expression, expr}}, line} ->
+        with {:ok, value} <- Expression.evaluate(expr, line, state.env) do
           put_byte(state, value) |> increment_pc() |> then(&{:ok, &1})
+        end
+
+      {:err, line} ->
+        {:error, line, :err_directive}
+
+      {{:skip, {:expression, size_expr}, {:expression, fill_expr}}, line} ->
+        with {:ok, size_value} <- Expression.evaluate(size_expr, line, state.env),
+             {:ok, fill_value} <- Expression.evaluate(fill_expr, line, state.env) do
+          case size_value do
+            0 ->
+              # Do nothing
+              {:ok, state}
+
+            _ ->
+              new_state =
+                for _ <- 1..size_value, reduce: state do
+                  state ->
+                    put_byte(state, fill_value) |> increment_pc()
+                end
+
+              {:ok, new_state}
+          end
+        end
+
+      {{:rept, {:expression, count_expr}, loop_body}, line} ->
+        with {:ok, count_value} <- Expression.evaluate(count_expr, line, state.env) do
+          case count_value do
+            0 ->
+              # Do nothing
+              {:ok, state}
+
+            _ ->
+              for _ <- 1..count_value, reduce: {:ok, state} do
+                {:ok, state} ->
+                  generate_all(loop_body, state)
+
+                error ->
+                  error
+              end
+          end
+        end
+
+      {{:irp, name, values, loop_body}, line} ->
+        loop =
+          for({:expression, value_expression} <- values, reduce: {:ok, state}) do
+            {:ok, state} ->
+              with {:ok, value} <- Expression.evaluate(value_expression, line, state.env) do
+                generate_all(loop_body, %State{
+                  state
+                  | env: Map.put(state.env, "\\#{name}", value)
+                })
+              end
+
+            error ->
+              error
+          end
+
+        with {:ok, new_state} <- loop do
+          {:ok, %State{new_state | env: Map.delete(state.env, "\\#{name}")}}
+        end
+
+      {{:if, condition, if_body, else_body}, line} ->
+        condition_true =
+          case condition do
+            {:expression, expression} ->
+              with {:ok, expression_value} <- Expression.evaluate(expression, line, state.env) do
+                {:ok, expression_value != 0}
+              end
+
+            {:defined?, name} ->
+              {:ok, Map.has_key?(state.env, name)}
+
+            {:not_defined?, name} ->
+              {:ok, not Map.has_key?(state.env, name)}
+          end
+
+        with {:ok, condition_true} <- condition_true do
+          cond do
+            # True case
+            condition_true -> generate_all(if_body, state)
+            # False case w/ else branch
+            not is_nil(else_body) -> generate_all(else_body, state)
+            # False case w/o else branch (do nothing)
+            true -> {:ok, state}
+          end
         end
 
       {{:call, opcode, args}, line_number} ->
         arg_values_result =
           args
           |> Enum.reduce_while({:ok, []}, fn {:expression, expr}, {:ok, args} ->
-            with {:ok, value} <- Expression.evaluate(expr, state.env) do
+            with {:ok, value} <- Expression.evaluate(expr, line_number, state.env) do
               {:cont, {:ok, args ++ [value]}}
             else
               error -> {:halt, error}
