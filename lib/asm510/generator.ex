@@ -62,10 +62,13 @@ defmodule ASM510.Generator do
               {:ok, state}
 
             _ ->
-              for _ <- 1..size_value, reduce: state do
-                state ->
-                  put_byte(state, fill_value) |> increment_pc()
-              end
+              new_state =
+                for _ <- 1..size_value, reduce: state do
+                  state ->
+                    put_byte(state, fill_value) |> increment_pc()
+                end
+
+              {:ok, new_state}
           end
         end
 
