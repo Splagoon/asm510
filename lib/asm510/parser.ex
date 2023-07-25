@@ -58,13 +58,21 @@ defmodule ASM510.Parser do
 
   defp parse_call_args(tokens, args) do
     case tokens do
-      # No args
-      [{:eol, line} | remaining_tokens] ->
+      [{:eol, _} | remaining_tokens] ->
         case args do
-          [] -> {:ok, [], remaining_tokens}
+          # No args
+          [] ->
+            {:ok, [], remaining_tokens}
+
           # If args is non-empty, then there was a trailing comma
-          _ -> {:error, line, {:unexpected_token, :eol}}
+          _ ->
+            new_args = [nil | args]
+            {:ok, Enum.reverse(new_args), remaining_tokens}
         end
+
+      # Comma without expression (means this arg is default)
+      [{{:separator, ?,}, _} | remaining_tokens] ->
+        parse_call_args(remaining_tokens, [nil | args])
 
       # Expression
       _ ->
@@ -190,7 +198,7 @@ defmodule ASM510.Parser do
   end
 
   defp handle_directive("skip", [size], line, remaining_tokens, syntax, scope) do
-    directive = {:skip, size, {:expression, [number: 0]}}
+    directive = {:skip, size, nil}
     parse_line(remaining_tokens, [{directive, line} | syntax], scope)
   end
 

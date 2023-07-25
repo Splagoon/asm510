@@ -53,9 +53,15 @@ defmodule ASM510.Generator do
       {:err, line} ->
         {:error, line, :err_directive}
 
-      {{:skip, {:expression, size_expr}, {:expression, fill_expr}}, line} ->
+      {{:skip, {:expression, size_expr}, fill}, line} ->
+        fill_result =
+          case fill do
+            {:expression, fill_expr} -> Expression.evaluate(fill_expr, line, state.env)
+            nil -> {:ok, 0}
+          end
+
         with {:ok, size_value} <- Expression.evaluate(size_expr, line, state.env),
-             {:ok, fill_value} <- Expression.evaluate(fill_expr, line, state.env) do
+             {:ok, fill_value} <- fill_result do
           case size_value do
             0 ->
               # Do nothing

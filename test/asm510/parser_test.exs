@@ -4,18 +4,12 @@ defmodule ASM510.ParserTest do
   alias ASM510.{Lexer, Parser}
 
   test "unexpected token" do
-    for test_tokens <- [
-          # :
-          [{{:separator, ?:}, 1}, {:eol, 1}],
-          # call ,
-          [{{:identifier, "call"}, 1}, {{:separator, ?,}, 1}, {:eol, 1}],
-          # call 1,
-          [{{:identifier, "call"}, 1}, {{:number, 1}, 1}, {{:separator, ?,}, 1}, {:eol, 1}]
-        ] do
-      syntax = Parser.parse(test_tokens)
+    # :
+    test_tokens = [{{:separator, ?:}, 1}, {:eol, 1}]
 
-      assert match?({:error, 1, {:unexpected_token, _}}, syntax)
-    end
+    syntax = Parser.parse(test_tokens)
+
+    assert match?({:error, 1, {:unexpected_token, {:separator, ?:}}}, syntax)
   end
 
   test "call with args" do
@@ -42,6 +36,23 @@ defmodule ASM510.ParserTest do
                     {:expression, [number: 2]}
                   ]}, 1}
               ]}
+  end
+
+  test "call with optional args" do
+    # call ,,
+    test_tokens =
+      [
+        {:identifier, "call"},
+        {:separator, ?,},
+        {:separator, ?,},
+        :eol
+      ]
+      |> Enum.map(&{&1, 1})
+
+    syntax = Parser.parse(test_tokens)
+
+    assert syntax ==
+             {:ok, [{{:call, "call", [nil, nil, nil]}, 1}]}
   end
 
   test "nested loops" do
