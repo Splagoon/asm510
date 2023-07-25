@@ -147,4 +147,108 @@ defmodule ASM510.GeneratorTest do
       end
     end
   end
+
+  test "macros" do
+    macros = """
+    .macro test1 x, y=2
+    .word \\x + \\y
+    .endm
+
+    .macro test2 x=2+1, y
+    .if ~(\\x-\\y) & 1
+    .exitm
+    .endif
+    .word \\x * \\y
+    .endm
+    """
+
+    tests = [
+      {"test1 1", 3},
+      {"test1 2,", 4},
+      {"test1 3, 4", 7},
+      {"test2 ,2", 6},
+      {"test2 3, 4", 12},
+      {"test2 5, 5", 0}
+    ]
+
+    for {input, expected} <- tests do
+      with {:ok, tokens} <- Lexer.lex(macros <> input),
+           {:ok, syntax} <- Parser.parse(tokens),
+           {:ok, rom} <- Generator.generate(syntax, 1) do
+        assert rom == <<expected::8>>
+      else
+        error -> flunk("Got error: #{inspect(error)}")
+      end
+    end
+  end
+
+  test "macro errors" do
+    tests = [
+      {"""
+       .irp x, 0, 0, 1
+       .if \\x
+       .exitm
+       .endif
+       .endr
+       """, {3, :unexpected_exit_macro}},
+      {"""
+       .macro test x, y=1
+       .endm
+       test ,1
+       """, {3, {:missing_required_argument, "test", "x"}}},
+      {"""
+       .macro maybe_err flag
+       .if \\flag
+       .err
+       .endif
+       .endm
+       maybe_err 0
+       maybe_err 1
+       """, {[line: 3, macro_line: 7], :err_directive}},
+      {"""
+       .macro test x, y
+       .endm
+       test ,,
+       """, {3, {:too_many_arguments, "test", 2, 3}}},
+      {"""
+       .macro test x, y, z
+       .word \\x
+       .endm
+       test 1, 2, 3
+       .word \\x
+       """, {5, {:undefined_symbol, "\\x"}}}
+    ]
+
+    for {input, {line, expected_error}} <- tests do
+      with {:ok, tokens} <- Lexer.lex(input),
+           {:ok, syntax} <- Parser.parse(tokens) do
+        assert Generator.generate(syntax) == {:error, line, expected_error}
+      else
+        error -> flunk("Got error: #{inspect(error)}")
+      end
+    end
+  end
+
+  test "bad calls" do
+    tests = [
+      {"""
+       xyzzy 1, 2
+       """, {:unknown_opcode, "xyzzy"}},
+      {"""
+       SKIP 1, 2, 3
+       """, {:bad_opcode, "SKIP", 3}},
+      {"""
+       ADD ,
+       """, {:missing_opcode_argument, "ADD"}}
+    ]
+
+    for {input, expected_error} <- tests do
+      with {:ok, tokens} <- Lexer.lex(input),
+           {:ok, syntax} <- Parser.parse(tokens) do
+        assert Generator.generate(syntax) == {:error, 1, expected_error}
+      else
+        error -> flunk("Got error: #{inspect(error)}")
+      end
+    end
+  end
 end

@@ -15,6 +15,12 @@ defmodule ASM510.CLI do
       sha3 = :crypto.hash(:sha3_224, output_data) |> Base.encode64()
       IO.puts("Done in #{millis}ms\n    sha1: #{sha1}\nsha3-224: #{sha3}")
     else
+      {:error, [line: line, macro_line: macro_line], error} ->
+        IO.puts(
+          :stderr,
+          "Error on line #{line} in macro expanded at line #{macro_line}: #{error_message(error)}"
+        )
+
       {:error, line, error} ->
         IO.puts(:stderr, "Error on line #{line}: #{error_message(error)}")
         exit(1)
@@ -69,6 +75,23 @@ defmodule ASM510.CLI do
   # Generator errors
   defp error_message(:err_directive),
     do: "Reached .err directive"
+
+  defp error_message({:unknown_opcode, opcode}), do: "Not an opcode or known macro: #{opcode}"
+
+  defp error_message({:bad_opcode, opcode, arity}),
+    do: "Wrong number of arguments given to opcode #{opcode}: #{arity}"
+
+  defp error_message({:too_many_arguments, macro_name, expected_args, actual_args}),
+    do:
+      "Too many arguments passed to macro \"#{macro_name}\"; expected #{expected_args}, got #{actual_args}"
+
+  defp error_message({:missing_required_argument, macro_name, arg_name}),
+    do: "Macro \"#{macro_name}\" requires a value for argument \"#{arg_name}\""
+
+  defp error_message({:missing_opcode_argument, opcode}),
+    do: "Call to opcode \"#{opcode}\" is missing a required argument"
+
+  defp error_message(:unexpected_exit_macro), do: "Found .exitm outside of a macro definition"
 
   # CLI errors
   defp error_message(:missing_input), do: "Missing input file"

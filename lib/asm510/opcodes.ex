@@ -3,6 +3,59 @@ defmodule ASM510.Opcodes do
 
   # Comments adapted from: https://github.com/mamedev/mame/blob/2d0088772029a2b788b1eeac64984fb375662410/src/devices/cpu/sm510/sm510op.cpp
 
+  defguard is_opcode(string)
+           when string in [
+                  "ADD",
+                  "ADD11",
+                  "ADX",
+                  "ATBP",
+                  "ATFC",
+                  "ATL",
+                  "ATPL",
+                  "ATR",
+                  "BDC",
+                  "CEND",
+                  "COMA",
+                  "DC",
+                  "DECB",
+                  "EXBLA",
+                  "EXC",
+                  "EXCD",
+                  "EXCI",
+                  "IDIV",
+                  "INCB",
+                  "KTA",
+                  "LAX",
+                  "LB",
+                  "LBL",
+                  "LDA",
+                  "RC",
+                  "RM",
+                  "ROT",
+                  "RTN0",
+                  "RTN1",
+                  "SBM",
+                  "SC",
+                  "SKIP",
+                  "SM",
+                  "T",
+                  "TA0",
+                  "TABL",
+                  "TAL",
+                  "TAM",
+                  "TB",
+                  "TC",
+                  "TF1",
+                  "TF4",
+                  "TIS",
+                  "TL",
+                  "TM",
+                  "TMI",
+                  "TML",
+                  "WR",
+                  "WS"
+                ]
+
   # ADD: add RAM to ACC
   def get_opcode("ADD", [], _), do: {:ok, [0x08]}
 
@@ -152,5 +205,5 @@ defmodule ASM510.Opcodes do
 
   # Unknown opcode or wrong arity
   def get_opcode(opcode, args, line_number),
-    do: {:error, :unknown_opcode, "#{opcode}/#{length(args)}", line_number}
+    do: {:error, line_number, {:bad_opcode, opcode, length(args)}}
 end

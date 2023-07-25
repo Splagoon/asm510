@@ -272,11 +272,11 @@ defmodule ASM510.Parser do
   defp handle_directive("endm", [], _, remaining_tokens, syntax, :macro),
     do: {:ok, Enum.reverse(syntax), remaining_tokens}
 
-  defp handle_directive("exitm", [], line, remaining_tokens, syntax, :macro) do
+  defp handle_directive("exitm", [], line, remaining_tokens, syntax, scope) do
     # .exitm needs to be carried forward into the generation phase, plus we
     # can't exit the current scope until we find .endm
     directive = :exit_macro
-    parse_line(remaining_tokens, [{directive, line} | syntax], :macro)
+    parse_line(remaining_tokens, [{directive, line} | syntax], scope)
   end
 
   defp handle_directive(directive, _, line, _, _, _),
