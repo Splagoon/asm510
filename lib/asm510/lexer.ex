@@ -19,7 +19,7 @@ defmodule ASM510.Lexer do
 
   defguardp is_whitespace(c) when c in ~c[\s\t]
 
-  defguardp is_separator(c) when c in ~c[,:]
+  defguardp is_separator(c) when c in ~c[,:=]
 
   defguardp is_operator(c) when c in ~c[+-*/()<>%~|&^!]
 

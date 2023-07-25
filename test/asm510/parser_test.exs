@@ -219,4 +219,75 @@ defmodule ASM510.ParserTest do
       error -> flunk("Got error: #{inspect(error)}")
     end
   end
+
+  test "macro definition" do
+    tests = [
+      {
+        """
+        .macro test arg1=x, arg2, arg3=3
+        .word \\arg2
+        .endm
+        """,
+        [
+          {{:macro, "test",
+            [
+              {"arg1", {:expression, [identifier: "x"]}},
+              {"arg2", nil},
+              {"arg3", {:expression, [number: 3]}}
+            ],
+            [
+              {{:word, {:expression, [identifier: "\\arg2"]}}, 2}
+            ]}, 1}
+        ]
+      },
+      {
+        """
+        .macro no_args
+        .endm
+        """,
+        [{{:macro, "no_args", [], []}, 1}]
+      },
+      {
+        """
+        .macro one_arg the_arg
+        .endm
+        """,
+        [{{:macro, "one_arg", [{"the_arg", nil}], []}, 1}]
+      }
+    ]
+
+    for {input, expected_syntax} <- tests do
+      with {:ok, tokens} <- Lexer.lex(input) do
+        assert Parser.parse(tokens) == {:ok, expected_syntax}
+      else
+        error -> flunk("Got error: #{inspect(error)}")
+      end
+    end
+  end
+
+  test "bad macro definition" do
+    tests = [
+      {"""
+       .macro 1
+       """, {:unexpected_token, {:number, 1}}},
+      {"""
+       .macro test a,
+       """, {:unexpected_token, :eol}},
+      {"""
+       .macro test 1
+       """, {:unexpected_token, {:number, 1}}},
+      {"""
+       .macro test x=,
+       """, {:unexpected_token, {:separator, ?,}}},
+      {"""
+       .macro test x+
+       """, {:unexpected_token, {:operator, :add}}}
+    ]
+
+    for {input, expected_error} <- tests do
+      with {:ok, tokens} <- Lexer.lex(input) do
+        assert Parser.parse(tokens) == {:error, 1, expected_error}
+      end
+    end
+  end
 end
