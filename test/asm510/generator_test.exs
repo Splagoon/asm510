@@ -160,6 +160,18 @@ defmodule ASM510.GeneratorTest do
     .endif
     .word \\x * \\y
     .endm
+
+    .macro collatz n, l=0
+    .if \\n - 1
+    .if \\n % 2
+    collatz (3 * \\n) + 1, \\l + 1
+    .else
+    collatz \\n / 2, \\l + 1
+    .endif
+    .else
+    .word \\l
+    .endif
+    .endm
     """
 
     tests = [
@@ -168,7 +180,8 @@ defmodule ASM510.GeneratorTest do
       {"test1 3, 4", 7},
       {"test2 ,2", 6},
       {"test2 3, 4", 12},
-      {"test2 5, 5", 0}
+      {"test2 5, 5", 0},
+      {"collatz 27", 111}
     ]
 
     for {input, expected} <- tests do

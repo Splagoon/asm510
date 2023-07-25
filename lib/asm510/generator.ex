@@ -210,7 +210,8 @@ defmodule ASM510.Generator do
     else
       macro_env =
         Enum.zip(macro_args, args ++ List.duplicate(nil, length(macro_args) - length(args)))
-        |> Enum.reduce_while({:ok, %{}}, fn {{arg_name, arg_default}, arg_value}, {:ok, env} ->
+        |> Enum.reduce_while({:ok, state.env}, fn {{arg_name, arg_default}, arg_value},
+                                                  {:ok, env} ->
           case arg_value do
             {:expression, expr} ->
               # An expression was passed to this arg
