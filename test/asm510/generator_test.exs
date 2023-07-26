@@ -153,17 +153,17 @@ defmodule ASM510.GeneratorTest do
     .macro test1 x, y=2
     .word \\x + \\y
     .endm
-
+    
     .macro test2 x=2+1, y
-    .if ~(\\x-\\y) & 1
+    .if \\x == \\y
     .exitm
     .endif
     .word \\x * \\y
     .endm
-
+    
     .macro collatz n, l=0
-    .if \\n - 1
-    .if \\n % 2
+    .if \\n != 1
+    .if \\n % 2 != 0
     collatz (3 * \\n) + 1, \\l + 1
     .else
     collatz \\n / 2, \\l + 1

@@ -27,11 +27,11 @@ defmodule ASM510.LexerTest do
     assert tokens ==
              {:ok,
               [
-                {{:operator, :right_shift}, 1},
+                {{:operator, :greater_than}, 1},
                 {{:operator, :left_shift}, 1},
                 {{:operator, :xor}, 1},
                 {{:operator, :right_shift}, 1},
-                {{:operator, :left_shift}, 1},
+                {{:operator, :less_than}, 1},
                 {:eol, 1}
               ]}
   end

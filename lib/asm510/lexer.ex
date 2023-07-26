@@ -21,7 +21,29 @@ defmodule ASM510.Lexer do
 
   defguardp is_separator(c) when c in ~c[,:=]
 
-  defguardp is_operator(c) when c in ~c[+-*/()<>%~|&^!]
+  defguardp is_operator(str)
+            when str in [
+                   ~c"<<",
+                   ~c">>",
+                   ~c"==",
+                   ~c"!=",
+                   ~c"<=",
+                   ~c">=",
+                   ~c"+",
+                   ~c"*",
+                   ~c"/",
+                   ~c"(",
+                   ~c")",
+                   ~c"<",
+                   ~c">",
+                   ~c"%",
+                   ~c"~",
+                   ~c"|",
+                   ~c"&",
+                   ~c"^",
+                   ~c"!",
+                   ~c"-"
+                 ]
 
   defp scan([], _, tokens), do: {:ok, Enum.reverse(tokens)}
 
@@ -34,31 +56,17 @@ defmodule ASM510.Lexer do
       <<c::utf8>> <> remaining_string when is_whitespace(c) ->
         scan([remaining_string | remaining_lines], line_number, tokens)
 
-      # Colon
-      <<c::utf8>> <> remaining_string when is_separator(c) ->
-        scan([remaining_string | remaining_lines], line_number, [
-          {{:separator, c}, line_number} | tokens
-        ])
-
       # Comment
       "#" <> _ ->
         scan(["" | remaining_lines], line_number, tokens)
 
-      # 2-char left shift
-      "<<" <> remaining_string ->
-        {:ok, token} = operator_to_token(?<, line_number)
-
-        scan([remaining_string | remaining_lines], line_number, [
-          {token, line_number} | tokens
-        ])
-
-      # 2-char right shift
-      ">>" <> remaining_string ->
-        {:ok, token} = operator_to_token(?>, line_number)
-
-        scan([remaining_string | remaining_lines], line_number, [
-          {token, line_number} | tokens
-        ])
+      # 2-char expression operators
+      <<c1::utf8, c2::utf8>> <> remaining_string when is_operator([c1, c2]) ->
+        with {:ok, token} <- operator_to_token([c1, c2], line_number) do
+          scan([remaining_string | remaining_lines], line_number, [
+            {token, line_number} | tokens
+          ])
+        end
 
       # Minus can be unary (negation) or binary (subtraction)
       "-" <> remaining_string ->
@@ -77,12 +85,18 @@ defmodule ASM510.Lexer do
         ])
 
       # Other 1-char expression operators
-      <<c::utf8>> <> remaining_string when is_operator(c) ->
-        with {:ok, token} <- operator_to_token(c, line_number) do
+      <<c::utf8>> <> remaining_string when is_operator([c]) ->
+        with {:ok, token} <- operator_to_token([c], line_number) do
           scan([remaining_string | remaining_lines], line_number, [
             {token, line_number} | tokens
           ])
         end
+
+      # Separators
+      <<c::utf8>> <> remaining_string when is_separator(c) ->
+        scan([remaining_string | remaining_lines], line_number, [
+          {{:separator, c}, line_number} | tokens
+        ])
 
       # Hexadecimal number
       "0x" <> remaining_string ->
@@ -148,7 +162,7 @@ defmodule ASM510.Lexer do
   defp count_until_separator("", count), do: count
 
   defp count_until_separator(<<c::utf8>> <> remaining_string, count) do
-    if is_whitespace(c) or is_separator(c) or is_operator(c) do
+    if is_whitespace(c) or is_separator(c) or is_operator([c]) do
       count
     else
       count_until_separator(remaining_string, count + 1)
@@ -156,19 +170,25 @@ defmodule ASM510.Lexer do
   end
 
   @operator_token_map %{
-    ?+ => :add,
-    ?* => :multiply,
-    ?/ => :divide,
-    ?( => :open_paren,
-    ?) => :close_paren,
-    ?< => :left_shift,
-    ?> => :right_shift,
-    ?% => :remainder,
-    ?~ => :complement,
-    ?| => :or,
-    ?& => :and,
-    ?^ => :xor,
-    ?! => :or_not
+    ~c"<<" => :left_shift,
+    ~c">>" => :right_shift,
+    ~c"==" => :equal,
+    ~c"!=" => :not_equal,
+    ~c"<=" => :less_or_equal,
+    ~c">=" => :greater_or_equal,
+    ~c"+" => :add,
+    ~c"*" => :multiply,
+    ~c"/" => :divide,
+    ~c"(" => :open_paren,
+    ~c")" => :close_paren,
+    ~c"<" => :less_than,
+    ~c">" => :greater_than,
+    ~c"%" => :remainder,
+    ~c"~" => :complement,
+    ~c"|" => :or,
+    ~c"&" => :and,
+    ~c"^" => :xor,
+    ~c"!" => :not
   }
   defp operator_to_token(c, line_number) do
     with {:ok, operator} <- Map.fetch(@operator_token_map, c) do

@@ -1,5 +1,5 @@
 defmodule ASM510.Expression do
-  import Bitwise
+  defp from_boolean(func), do: fn lhs, rhs -> if func.(lhs, rhs), do: 1, else: 0 end
 
   defp get_operation(operator),
     do:
@@ -16,10 +16,16 @@ defmodule ASM510.Expression do
         :or => &Bitwise.|||/2,
         :and => &Bitwise.&&&/2,
         :xor => &Bitwise.^^^/2,
-        :or_not => &(&1 ||| ~~~&2)
+        :not => &if(&1 == 0, do: 1, else: 0),
+        :equal => from_boolean(&Kernel.==/2),
+        :not_equal => from_boolean(&Kernel.!=/2),
+        :less_or_equal => from_boolean(&Kernel.<=/2),
+        :less_than => from_boolean(&Kernel.</2),
+        :greater_or_equal => from_boolean(&Kernel.>=/2),
+        :greater_than => from_boolean(&Kernel.>/2)
       }[operator]
 
-  defguardp is_unary(operator) when operator in [:negate, :complement]
+  defguardp is_unary(operator) when operator in [:negate, :complement, :not]
 
   def evaluate(expression, line, variables), do: evaluate(expression, [], line, variables)
 
@@ -137,19 +143,25 @@ defmodule ASM510.Expression do
   end
 
   @precedence_map %{
-    :add => 1,
-    :subtract => 1,
+    :equal => 1,
+    :not_equal => 1,
+    :greater_or_equal => 1,
+    :greater_than => 1,
+    :less_or_equal => 1,
+    :less_than => 1,
     :or => 2,
-    :and => 2,
-    :xor => 2,
-    :or_not => 2,
-    :multiply => 3,
-    :divide => 3,
-    :remainder => 3,
-    :left_shift => 3,
-    :right_shift => 3,
+    :xor => 3,
+    :and => 4,
+    :left_shift => 5,
+    :right_shift => 5,
+    :add => 6,
+    :subtract => 6,
+    :multiply => 7,
+    :divide => 7,
+    :remainder => 7,
     :negate => 9,
-    :complement => 9
+    :complement => 9,
+    :not => 9
   }
 
   # https://en.wikipedia.org/wiki/Shunting-yard_algorithm
