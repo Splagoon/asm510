@@ -4,8 +4,8 @@
     .set SUBROUTINE_PAGE, 0x100
 
     # Subroutine: WAIT
-    .set WAIT, 0x01
-    .set WAIT_OFFSET, 0x80
+    .set WAIT, 0x00
+    .set WAIT_OFFSET, 0x00
     .org WAIT
     .word WAIT_OFFSET
     .set WAIT_PAGE_START, SUBROUTINE_PAGE + (WAIT_OFFSET * 0x10)
@@ -19,8 +19,8 @@ WAIT_LOOP:
     RTN0
 
     # Subroutine: LCDS_ON
-    .set LCDS_ON, 0x00
-    .set LCDS_ON_OFFSET, 0x00
+    .set LCDS_ON, 0x01
+    .set LCDS_ON_OFFSET, 0x40
     .org LCDS_ON
     .word LCDS_ON_OFFSET
     .org SUBROUTINE_PAGE + (LCDS_ON_OFFSET * 0x10)
@@ -35,7 +35,7 @@ LCDS_ON_LOOP:
 
     # Subroutine: LCDS_OFF
     .set LCDS_OFF, 0x02
-    .set LCDS_OFF_OFFSET, 0x40
+    .set LCDS_OFF_OFFSET, 0x80
     .org LCDS_OFF
     .word LCDS_OFF_OFFSET
     .org SUBROUTINE_PAGE + (LCDS_OFF_OFFSET * 0x10)

@@ -13,7 +13,7 @@ defmodule ASM510.E2ETest do
          {:ok, syntax} <- Parser.parse(tokens),
          {:ok, data} <- Generator.generate(syntax) do
       hash = :crypto.hash(:sha3_224, data) |> Base.encode64()
-      assert hash == "eslGqo0sZUIMpuCXsJqAwUTCeDIpRWfMn/pNIg=="
+      assert hash == "DnXwdGF6WtRgn10JXVgRkA5/El+VipjZP/nEmQ=="
     else
       error -> flunk("got error: #{inspect(error)}")
     end
