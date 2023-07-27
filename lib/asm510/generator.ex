@@ -40,7 +40,7 @@ defmodule ASM510.Generator do
         {:ok, %State{state | env: Map.put_new(state.env, label_name, state.pc)}}
 
       {{:set, name, {:expression, value_expr}}, line} ->
-        name = get_identifier_name(name, line, state)
+        name = get_identifier_name(name, line, state.env)
 
         with {:ok, name} <- name,
              {:ok, value} <- Expression.evaluate(value_expr, line, state.env) do
@@ -104,7 +104,7 @@ defmodule ASM510.Generator do
         end
 
       {{:irp, name, values, loop_body}, line} ->
-        name = get_identifier_name(name, line, state)
+        name = get_identifier_name(name, line, state.env)
 
         with {:ok, name} <- name do
           loop =
@@ -139,7 +139,7 @@ defmodule ASM510.Generator do
               {:ok, Map.has_key?(state.env, name)}
 
             {:defined?, {:quoted_identifier, name}} ->
-              with {:ok, value} <- get_quoted_identifier(name, line, state) do
+              with {:ok, value} <- get_quoted_identifier(name, line, state.env) do
                 {:ok, Map.has_key?(state.env, value)}
               end
 
@@ -147,7 +147,7 @@ defmodule ASM510.Generator do
               {:ok, not Map.has_key?(state.env, name)}
 
             {:not_defined?, {:quoted_identifier, name}} ->
-              with {:ok, value} <- get_quoted_identifier(name, line, state) do
+              with {:ok, value} <- get_quoted_identifier(name, line, state.env) do
                 {:ok, not Map.has_key?(state.env, value)}
               end
           end
@@ -225,6 +225,22 @@ defmodule ASM510.Generator do
       {:error, macro_line_number,
        {:too_many_arguments, macro_name, length(macro_args), length(args)}}
     else
+      define_macro_identifier = fn arg_name, name, env ->
+        env
+        |> Map.put("'#{arg_name}", name)
+        # Even if this identifier isn't defined yet, it might be
+        # defined during the course of the macro
+        |> Map.put("\\#{arg_name}", fn line, env ->
+          case Map.fetch(env, name) do
+            :error ->
+              {:error, line, {:undefined_symbol, name}}
+
+            result ->
+              result
+          end
+        end)
+      end
+
       macro_env =
         Enum.zip(macro_args, args ++ List.duplicate(nil, length(macro_args) - length(args)))
         |> Enum.reduce_while({:ok, state.env}, fn {{arg_name, arg_default}, arg_value},
@@ -233,17 +249,17 @@ defmodule ASM510.Generator do
             {:expression, [identifier: name]} ->
               # A lone identifier was passed, which is quotable and might not
               # be defined
-              new_env =
-                env
-                |> Map.put("'#{arg_name}", name)
-                |> then(
-                  &if(Map.has_key?(env, name),
-                    do: Map.put(&1, "\\#{arg_name}", Map.get(env, name)),
-                    else: &1
-                  )
-                )
-
+              new_env = define_macro_identifier.(arg_name, name, env)
               {:cont, {:ok, new_env}}
+
+            quoted_name = {:quoted_identifier, _} ->
+              # Oh now we're getting meta
+              with {:ok, name} <- get_identifier_name(quoted_name, macro_line_number, env) do
+                new_env = define_macro_identifier.(arg_name, name, env)
+                {:cont, {:ok, new_env}}
+              else
+                error -> {:halt, error}
+              end
 
             {:expression, expr} ->
               # An expression was passed to this arg
@@ -263,7 +279,7 @@ defmodule ASM510.Generator do
               end
 
             _ ->
-              # No expression was passed and arg has no default
+              # Nothing was passed and arg has no default
               {:halt,
                {:error, macro_line_number, {:missing_required_argument, macro_name, arg_name}}}
           end
@@ -282,10 +298,18 @@ defmodule ASM510.Generator do
              generate_all(macro_body, %State{state | env: macro_env}),
            {:ok, new_state} <- get_state.(generate_result) do
         # Keep new values defined in the macro, but unset the args
+        # If an arg was shadowed, restore its previous value
+        unshadow = fn env, arg ->
+          case Map.fetch(state.env, arg) do
+            {:ok, value} -> Map.put(env, arg, value)
+            :error -> Map.delete(env, arg)
+          end
+        end
+
         new_env =
           macro_args
           |> Enum.map(&elem(&1, 0))
-          |> Enum.reduce(new_state.env, &Map.delete(&2, "\\#{&1}"))
+          |> Enum.reduce(new_state.env, &(&2 |> unshadow.("\\#{&1}") |> unshadow.("'#{&1}")))
 
         {:ok, %State{new_state | env: new_env}}
       else
@@ -298,20 +322,20 @@ defmodule ASM510.Generator do
     end
   end
 
-  defp get_quoted_identifier(name, line, state) do
-    case Map.fetch(state.env, "'#{name}") do
+  defp get_quoted_identifier(name, line, env) do
+    case Map.fetch(env, "'#{name}") do
       :error -> {:error, line, {:undefined_symbol, "'#{name}"}}
       ok -> ok
     end
   end
 
-  defp get_identifier_name(name, line, state) do
+  defp get_identifier_name(name, line, env) do
     case name do
       {:identifier, name} ->
         {:ok, name}
 
       {:quoted_identifier, name} ->
-        get_quoted_identifier(name, line, state)
+        get_quoted_identifier(name, line, env)
     end
   end
 

@@ -300,23 +300,84 @@ defmodule ASM510.GeneratorTest do
   end
 
   test "quoted symbols" do
-    test_input = """
-    .macro test_set name
-    .ifdef 'name
-    .err
-    .endif
-    .set 'name, 0x3D
-    .endm
-    test_set x
-    .word x
-    """
+    tests = [
+      {"""
+       .macro test_set name
+       .ifdef 'name
+       .err
+       .endif
+       .set 'name, 0x3D
+       .endm
+       test_set x
+       .word x
+       """, 0x3D},
+      {"""
+       .macro copy_to from, to
+       .set 'to, \\from
+       .endm
+       .set x, 0x2F
+       copy_to x, y
+       .word y
+       """, 0x2F},
+      {"""
+       .macro test1 x
+       .set 'x, 3
+       .endm
+       .macro test2 x
+       test1 'x
+       .set 'x, \\x + 1
+       .endm
+       test2 asdf
+       .word asdf
+       """, 4}
+    ]
 
-    with {:ok, tokens} <- Lexer.lex(test_input),
-         {:ok, syntax} <- Parser.parse(tokens),
-         {:ok, rom} <- Generator.generate(syntax, 1) do
-      assert rom == <<0x3D::8>>
-    else
-      error -> flunk("Got error: #{inspect(error)}")
+    for {input, expected} <- tests do
+      with {:ok, tokens} <- Lexer.lex(input),
+           {:ok, syntax} <- Parser.parse(tokens),
+           {:ok, rom} <- Generator.generate(syntax, 1) do
+        assert rom == <<expected::8>>
+      else
+        error -> flunk("Got error: #{inspect(error)}")
+      end
+    end
+  end
+
+  test "quoted symbol errors" do
+    tests = [
+      {"""
+       .ifdef 'x
+       .err
+       .endif
+       """, 1, {:undefined_symbol, "'x"}},
+      {"""
+       .macro test name
+       .set 'name, \\name
+       .endm
+       test foo
+       """, [line: 2, macro_line: 4], {:undefined_symbol, "foo"}},
+      {"""
+       .macro test
+       .set 'asdf, 0
+       .endm
+       test
+       """, [line: 2, macro_line: 4], {:undefined_symbol, "'asdf"}},
+      {"""
+       .macro test arg
+       .set 'arg, 1
+       .endm
+       test x
+       .set 'arg, 2
+       """, 5, {:undefined_symbol, "'arg"}}
+    ]
+
+    for {input, line, error} <- tests do
+      with {:ok, tokens} <- Lexer.lex(input),
+           {:ok, syntax} <- Parser.parse(tokens) do
+        assert Generator.generate(syntax, 1) == {:error, line, error}
+      else
+        error -> flunk("Got error: #{inspect(error)}")
+      end
     end
   end
 end

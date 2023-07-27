@@ -68,9 +68,9 @@ defmodule ASM510.Expression do
   defp get_value({:number, value}, _, _), do: {:ok, value}
 
   defp get_value({:identifier, name}, line, variables) do
-    with {:ok, value} <- Map.fetch(variables, name) do
-      {:ok, value}
-    else
+    case Map.fetch(variables, name) do
+      {:ok, func} when is_function(func) -> func.(line, variables)
+      {:ok, value} -> {:ok, value}
       :error -> {:error, line, {:undefined_symbol, name}}
     end
   end
