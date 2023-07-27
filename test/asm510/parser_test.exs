@@ -71,14 +71,14 @@ defmodule ASM510.ParserTest do
          {:ok, syntax} <- Parser.parse(tokens) do
       assert syntax == [
                {{:word, {:expression, [number: 1]}}, 1},
-               {{:irp, "x",
+               {{:irp, {:identifier, "x"},
                  [
                    expression: [number: 2],
                    expression: [number: 3],
                    expression: [number: 4]
                  ],
                  [
-                   {{:irp, "y",
+                   {{:irp, {:identifier, "y"},
                      [
                        expression: [number: 5],
                        expression: [number: 6],

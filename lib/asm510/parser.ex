@@ -81,18 +81,26 @@ defmodule ASM510.Parser do
             t not in [:eol, {:separator, ?,}]
           end)
 
-        if expression_tokens == [] do
-          {:error, line, {:unexpected_token, separator_token}}
-        else
-          with {:ok, expression} <- Expression.parse(expression_tokens) do
-            new_args = [{:expression, expression} | args]
+        new_args =
+          case expression_tokens do
+            [] ->
+              {:error, line, {:unexpected_token, separator_token}}
 
-            case separator_token do
-              # Last arg
-              :eol -> {:ok, Enum.reverse(new_args), remaining_tokens}
-              # Another arg
-              {:separator, ?,} -> parse_call_args(remaining_tokens, new_args)
-            end
+            [{{:quoted_identifier, name}, _}] ->
+              {:ok, [{:quoted_identifier, name} | args]}
+
+            _ ->
+              with {:ok, expression} <- Expression.parse(expression_tokens) do
+                {:ok, [{:expression, expression} | args]}
+              end
+          end
+
+        with {:ok, new_args} <- new_args do
+          case separator_token do
+            # Last arg
+            :eol -> {:ok, Enum.reverse(new_args), remaining_tokens}
+            # Another arg
+            {:separator, ?,} -> parse_call_args(remaining_tokens, new_args)
           end
         end
     end
@@ -250,7 +258,24 @@ defmodule ASM510.Parser do
          syntax,
          scope
        ),
-       do: parse_if_else(remaining_tokens, {:defined?, name}, line, syntax, scope)
+       do: parse_if_else(remaining_tokens, {:defined?, {:identifier, name}}, line, syntax, scope)
+
+  defp handle_directive(
+         "ifdef",
+         [{:quoted_identifier, name}],
+         line,
+         remaining_tokens,
+         syntax,
+         scope
+       ),
+       do:
+         parse_if_else(
+           remaining_tokens,
+           {:defined?, {:quoted_identifier, name}},
+           line,
+           syntax,
+           scope
+         )
 
   defp handle_directive(
          "ifndef",
@@ -260,7 +285,31 @@ defmodule ASM510.Parser do
          syntax,
          scope
        ),
-       do: parse_if_else(remaining_tokens, {:not_defined?, name}, line, syntax, scope)
+       do:
+         parse_if_else(
+           remaining_tokens,
+           {:not_defined?, {:identifier, name}},
+           line,
+           syntax,
+           scope
+         )
+
+  defp handle_directive(
+         "ifndef",
+         [{:quoted_identifier, name}],
+         line,
+         remaining_tokens,
+         syntax,
+         scope
+       ),
+       do:
+         parse_if_else(
+           remaining_tokens,
+           {:not_defined?, {:quoted_identifier, name}},
+           line,
+           syntax,
+           scope
+         )
 
   defp handle_directive("else", [], _, remaining_tokens, syntax, :if),
     do: {:ok, Enum.reverse(syntax), remaining_tokens, :else}
@@ -286,10 +335,13 @@ defmodule ASM510.Parser do
     case expression do
       {:expression, [identifier: name = <<c::utf8>> <> _]} ->
         if c not in ~c[.\\] do
-          {:ok, name}
+          {:ok, {:identifier, name}}
         else
           {:error, line, {:reserved_name, name}}
         end
+
+      quoted_identifier = {:quoted_identifier, _} ->
+        {:ok, quoted_identifier}
 
       _ ->
         {:error, line, :expected_name}

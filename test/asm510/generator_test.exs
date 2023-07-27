@@ -264,4 +264,59 @@ defmodule ASM510.GeneratorTest do
       end
     end
   end
+
+  test "variables/labels in scopes" do
+    tests = [
+      {"""
+       .ifndef X
+       .set X, 0x0C
+       .endif
+       .word X
+       """, 0x0C},
+      {"""
+       .macro test
+       .org 0x10
+       label:
+       SKIP
+       .endm
+       .ifdef label
+       .err
+       .endif
+       test
+       .org 0
+       .word label
+       """, 0x10}
+    ]
+
+    for {input, expected} <- tests do
+      with {:ok, tokens} <- Lexer.lex(input),
+           {:ok, syntax} <- Parser.parse(tokens),
+           {:ok, rom} <- Generator.generate(syntax, 1) do
+        assert rom == <<expected::8>>
+      else
+        error -> flunk("Got error: #{inspect(error)}")
+      end
+    end
+  end
+
+  test "quoted symbols" do
+    test_input = """
+    .macro test_set name
+    .ifdef 'name
+    .err
+    .endif
+    .set 'name, 0x3D
+    .endm
+    test_set x
+    .word x
+    """
+
+    with {:ok, tokens} <- Lexer.lex(test_input),
+         {:ok, syntax} <- Parser.parse(tokens),
+         {:ok, rom} <- Generator.generate(syntax, 1) do
+      assert rom == <<0x3D::8>>
+    else
+      error -> flunk("Got error: #{inspect(error)}")
+    end
+  end
 end

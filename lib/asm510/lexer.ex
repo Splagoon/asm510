@@ -123,6 +123,15 @@ defmodule ASM510.Lexer do
           ])
         end
 
+      # Quoted identifier
+      "'" <> <<c::utf8>> <> _ when is_valid_identifier_start(c) ->
+        with {:ok, identifier, new_remaining_string} <-
+               scan_identifier(String.slice(current_line, 1..-1), line_number) do
+          scan([new_remaining_string | remaining_lines], line_number, [
+            {{:quoted_identifier, identifier}, line_number} | tokens
+          ])
+        end
+
       # Identifier
       <<c::utf8>> <> _ when is_valid_identifier_start(c) ->
         with {:ok, identifier, new_remaining_string} <- scan_identifier(current_line, line_number) do
