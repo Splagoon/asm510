@@ -32,7 +32,7 @@ defmodule ASM510.ParserTest do
                 {{:call, "call",
                   [
                     {:expression, [number: 1]},
-                    {:expression, [identifier: "name"]},
+                    {:identifier, "name"},
                     {:expression, [number: 2]}
                   ]}, 1}
               ]}
@@ -85,8 +85,8 @@ defmodule ASM510.ParserTest do
                        expression: [number: 7]
                      ],
                      [
-                       {{:word, {:expression, [identifier: "\\x"]}}, 4},
-                       {{:word, {:expression, [identifier: "\\y"]}}, 5}
+                       {{:word, {:identifier, "\\x"}}, 4},
+                       {{:word, {:identifier, "\\y"}}, 5}
                      ]}, 3},
                    {{:word, {:expression, [number: 8]}}, 7}
                  ]}, 2}
@@ -242,12 +242,12 @@ defmodule ASM510.ParserTest do
         [
           {{:macro, "test",
             [
-              {"arg1", {:expression, [identifier: "x"]}},
+              {"arg1", {:identifier, "x"}},
               {"arg2", nil},
               {"arg3", {:expression, [number: 3]}}
             ],
             [
-              {{:word, {:expression, [identifier: "\\arg2"]}}, 2}
+              {{:word, {:identifier, "\\arg2"}}, 2}
             ]}, 1}
         ]
       },

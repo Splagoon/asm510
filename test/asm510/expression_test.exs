@@ -27,7 +27,7 @@ defmodule ASM510.ExpressionTest do
       ]
       |> Enum.map(&{&1, 1})
 
-    with {:ok, expression} <- Expression.parse(tokens),
+    with {:ok, {:expression, expression}} <- Expression.parse(tokens),
          {:ok, result} <- Expression.evaluate(expression, 0, %{}) do
       assert result == 40
     else
@@ -83,7 +83,7 @@ defmodule ASM510.ExpressionTest do
       ]
       |> Enum.map(&{&1, 1})
 
-    with {:ok, expression} <- Expression.parse(tokens),
+    with {:ok, {:expression, expression}} <- Expression.parse(tokens),
          {:ok, result} <- Expression.evaluate(expression, 0, %{}) do
       assert result == 3
     else
@@ -122,7 +122,7 @@ defmodule ASM510.ExpressionTest do
     # x
     tokens = [{{:identifier, "x"}, 1}]
 
-    with {:ok, expression} <- Expression.parse(tokens),
+    with {:ok, {:expression, expression}} <- Expression.parse(tokens),
          {:ok, result} <- Expression.evaluate(expression, 0, %{"x" => 123}) do
       assert result == 123
     else
@@ -145,7 +145,7 @@ defmodule ASM510.ExpressionTest do
       with {:ok, tokens} <- Lexer.lex(input),
            # Remove :eol token
            tokens <- List.delete_at(tokens, -1),
-           {:ok, expression} <- Expression.parse(tokens),
+           {:ok, {:expression, expression}} <- Expression.parse(tokens),
            {:ok, result} <- Expression.evaluate(expression, 0, %{}) do
         assert result == expected
       else

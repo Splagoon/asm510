@@ -36,38 +36,40 @@ defmodule ASM510.Generator do
 
   defp generate_one(syntax, state) do
     case syntax do
-      {{:label, label_name}, _} ->
-        {:ok, %State{state | env: Map.put_new(state.env, label_name, state.pc)}}
+      {{:label, {:label_expression, label_expr}}, line} ->
+        with {:ok, label_name} <- get_label_name(label_expr, line, state.env) do
+          {:ok, %State{state | env: Map.put_new(state.env, label_name, state.pc)}}
+        end
 
-      {{:set, name, {:expression, value_expr}}, line} ->
+      {{:set, name, value_arg}, line} ->
         name = get_identifier_name(name, line, state.env)
 
         with {:ok, name} <- name,
-             {:ok, value} <- Expression.evaluate(value_expr, line, state.env) do
+             {:ok, value} <- get_arg_value(value_arg, line, state.env) do
           {:ok, %State{state | env: Map.put(state.env, name, value)}}
         end
 
-      {{:org, {:expression, expr}}, line} ->
-        with {:ok, value} <- Expression.evaluate(expr, line, state.env) do
+      {{:org, value_arg}, line} ->
+        with {:ok, value} <- get_arg_value(value_arg, line, state.env) do
           {:ok, %State{state | pc: value}}
         end
 
-      {{:word, {:expression, expr}}, line} ->
-        with {:ok, value} <- Expression.evaluate(expr, line, state.env) do
+      {{:word, value_arg}, line} ->
+        with {:ok, value} <- get_arg_value(value_arg, line, state.env) do
           put_byte(state, value) |> increment_pc() |> then(&{:ok, &1})
         end
 
       {:err, line} ->
         {:error, line, :err_directive}
 
-      {{:skip, {:expression, size_expr}, fill}, line} ->
+      {{:skip, size_arg, fill_arg}, line} ->
         fill_result =
-          case fill do
-            {:expression, fill_expr} -> Expression.evaluate(fill_expr, line, state.env)
+          case fill_arg do
             nil -> {:ok, 0}
+            _ -> get_arg_value(fill_arg, line, state.env)
           end
 
-        with {:ok, size_value} <- Expression.evaluate(size_expr, line, state.env),
+        with {:ok, size_value} <- get_arg_value(size_arg, line, state.env),
              {:ok, fill_value} <- fill_result do
           case size_value do
             0 ->
@@ -85,8 +87,8 @@ defmodule ASM510.Generator do
           end
         end
 
-      {{:rept, {:expression, count_expr}, loop_body}, line} ->
-        with {:ok, count_value} <- Expression.evaluate(count_expr, line, state.env) do
+      {{:rept, count_arg, loop_body}, line} ->
+        with {:ok, count_value} <- get_arg_value(count_arg, line, state.env) do
           case count_value do
             0 ->
               # Do nothing
@@ -108,9 +110,9 @@ defmodule ASM510.Generator do
 
         with {:ok, name} <- name do
           loop =
-            for({:expression, value_expression} <- values, reduce: {:ok, state}) do
+            for(value_arg <- values, reduce: {:ok, state}) do
               {:ok, state} ->
-                with {:ok, value} <- Expression.evaluate(value_expression, line, state.env) do
+                with {:ok, value} <- get_arg_value(value_arg, line, state.env) do
                   generate_all(loop_body, %State{
                     state
                     | env: Map.put(state.env, "\\#{name}", value)
@@ -130,11 +132,6 @@ defmodule ASM510.Generator do
       {{:if, condition, if_body, else_body}, line} ->
         condition_true =
           case condition do
-            {:expression, expression} ->
-              with {:ok, expression_value} <- Expression.evaluate(expression, line, state.env) do
-                {:ok, expression_value != 0}
-              end
-
             {:defined?, {:identifier, name}} ->
               {:ok, Map.has_key?(state.env, name)}
 
@@ -149,6 +146,11 @@ defmodule ASM510.Generator do
             {:not_defined?, {:quoted_identifier, name}} ->
               with {:ok, value} <- get_quoted_identifier(name, line, state.env) do
                 {:ok, not Map.has_key?(state.env, value)}
+              end
+
+            arg ->
+              with {:ok, arg_value} <- get_arg_value(arg, line, state.env) do
+                {:ok, arg_value != 0}
               end
           end
 
@@ -195,15 +197,15 @@ defmodule ASM510.Generator do
       args
       |> Enum.reduce_while({:ok, []}, fn arg, {:ok, args} ->
         case arg do
-          {:expression, expr} ->
-            with {:ok, value} <- Expression.evaluate(expr, line_number, state.env) do
+          nil ->
+            {:halt, {:error, line_number, {:missing_opcode_argument, opcode}}}
+
+          arg ->
+            with {:ok, value} <- get_arg_value(arg, line_number, state.env) do
               {:cont, {:ok, args ++ [value]}}
             else
               error -> {:halt, error}
             end
-
-          nil ->
-            {:halt, {:error, line_number, {:missing_opcode_argument, opcode}}}
         end
       end)
 
@@ -246,7 +248,7 @@ defmodule ASM510.Generator do
         |> Enum.reduce_while({:ok, state.env}, fn {{arg_name, arg_default}, arg_value},
                                                   {:ok, env} ->
           case arg_value do
-            {:expression, [identifier: name]} ->
+            {:identifier, name} ->
               # A lone identifier was passed, which is quotable and might not
               # be defined
               new_env = define_macro_identifier.(arg_name, name, env)
@@ -261,9 +263,9 @@ defmodule ASM510.Generator do
                 error -> {:halt, error}
               end
 
-            {:expression, expr} ->
+            _ when not is_nil(arg_value) ->
               # An expression was passed to this arg
-              with {:ok, value} <- Expression.evaluate(expr, macro_line_number, env) do
+              with {:ok, value} <- get_arg_value(arg_value, macro_line_number, env) do
                 {:cont, {:ok, Map.put(env, "\\#{arg_name}", value)}}
               else
                 error -> {:halt, error}
@@ -271,8 +273,8 @@ defmodule ASM510.Generator do
 
             nil when not is_nil(arg_default) ->
               # Use this arg's default value
-              with {:expression, expr} <- arg_default,
-                   {:ok, value} <- Expression.evaluate(expr, macro_line_number, env) do
+              with arg_default_value <- arg_default,
+                   {:ok, value} <- get_arg_value(arg_default_value, macro_line_number, env) do
                 {:cont, {:ok, Map.put(env, "\\#{arg_name}", value)}}
               else
                 error -> {:halt, error}
@@ -322,6 +324,28 @@ defmodule ASM510.Generator do
     end
   end
 
+  defp get_label_name(label, line, env) do
+    label
+    |> Enum.reduce_while({:ok, ""}, fn {label_part, part_name}, {:ok, label_name} ->
+      case label_part do
+        :constant ->
+          {:cont, {:ok, label_name <> part_name}}
+
+        :variable ->
+          case Map.fetch(env, part_name) do
+            {:ok, value} when is_integer(value) ->
+              {:cont, {:ok, label_name <> Integer.to_string(value)}}
+
+            {:ok, value} when is_binary(value) ->
+              {:cont, {:ok, label_name <> value}}
+
+            :error ->
+              {:halt, {:error, line, {:undefined_symbol, part_name}}}
+          end
+      end
+    end)
+  end
+
   defp get_quoted_identifier(name, line, env) do
     case Map.fetch(env, "'#{name}") do
       :error -> {:error, line, {:undefined_symbol, "'#{name}"}}
@@ -336,6 +360,31 @@ defmodule ASM510.Generator do
 
       {:quoted_identifier, name} ->
         get_quoted_identifier(name, line, env)
+    end
+  end
+
+  defp get_arg_value(arg, line, env) do
+    case arg do
+      {type, _} when type in [:identifier, :quoted_identifier] ->
+        with {:ok, name} <- get_identifier_name(arg, line, env) do
+          case Map.fetch(env, name) do
+            {:ok, func} when is_function(func) -> func.(line, env)
+            {:ok, value} -> {:ok, value}
+            :error -> {:error, line, {:undefined_symbol, name}}
+          end
+        end
+
+      {:expression, expr} ->
+        Expression.evaluate(expr, line, env)
+
+      {:label_expression, label} ->
+        with {:ok, label_name} <- get_label_name(label, line, env) do
+          with {:ok, value} <- Map.fetch(env, label_name) do
+            {:ok, value}
+          else
+            :error -> {:error, line, {:undefined_symbol, label_name}}
+          end
+        end
     end
   end
 

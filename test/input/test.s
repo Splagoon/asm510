@@ -22,6 +22,7 @@
     .endm
 
     .macro toggle_lcd toggle
+LCDS_'toggle _LOOP:
     .irp bit, 0, 1, 2, 3
     .if \toggle
     SM \bit
@@ -30,6 +31,8 @@
     .endif
     TM WAIT
     .endr
+    INCB
+    T LCDS_'toggle _LOOP
     .endm
 
     # Subroutine: WAIT
@@ -44,18 +47,12 @@ WAIT_LOOP:
 
     # Subroutine: LCDS_ON
     def_subroutine LCDS_ON
-LCDS_ON_LOOP:
     toggle_lcd ON
-    INCB
-    T LCDS_ON_LOOP
     RTN0
 
     # Subroutine: LCDS_OFF
     def_subroutine LCDS_OFF
-LCDS_OFF_LOOP:
     toggle_lcd OFF
-    INCB
-    T LCDS_OFF_LOOP
     RTN0
 
     # Entrypoint

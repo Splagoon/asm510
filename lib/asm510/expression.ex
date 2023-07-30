@@ -137,8 +137,9 @@ defmodule ASM510.Expression do
     do: {:error, line, {:unexpected_token, last_token}}
 
   def parse(tokens) do
-    with :ok <- validate_operand(tokens, 0) do
-      parse_expression(tokens, [], [])
+    with :ok <- validate_operand(tokens, 0),
+         {:ok, expression} <- parse_expression(tokens, [], []) do
+      {:ok, {:expression, expression}}
     end
   end
 

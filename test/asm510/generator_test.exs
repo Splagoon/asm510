@@ -329,7 +329,27 @@ defmodule ASM510.GeneratorTest do
        .endm
        test2 asdf
        .word asdf
-       """, 4}
+       """, 4},
+      {"""
+       .macro test n
+       .org 15
+       label_\\n:
+       .endm
+       test 3
+       .org 0
+       .word label_3
+       """, 15},
+      {"""
+       .macro def_label name
+       LABEL_'name:
+       .endm
+       def_label TEST
+       .ifdef LABEL_TEST
+       .word 94
+       .else
+       .err
+       .endif
+       """, 94}
     ]
 
     for {input, expected} <- tests do
