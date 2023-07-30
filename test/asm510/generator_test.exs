@@ -400,4 +400,25 @@ defmodule ASM510.GeneratorTest do
       end
     end
   end
+
+  test "undefined symbol in label expression" do
+    tests = [
+      {"LABEL_\\value:", 1, "\\value"},
+      {"LABEL_'name:", 1, "'name"},
+      {"""
+       .irp value, 1
+       .word LABEL_\\value
+       .endr
+       """, 2, "LABEL_1"}
+    ]
+
+    for {input, line, symbol} <- tests do
+      with {:ok, tokens} <- Lexer.lex(input),
+           {:ok, syntax} <- Parser.parse(tokens) do
+        assert Generator.generate(syntax, 1) == {:error, line, {:undefined_symbol, symbol}}
+      else
+        error -> flunk("Got error: #{inspect(error)}")
+      end
+    end
+  end
 end

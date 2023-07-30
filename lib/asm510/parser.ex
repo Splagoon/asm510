@@ -20,14 +20,6 @@ defmodule ASM510.Parser do
       [{:eol, _} | remaining_tokens] ->
         parse_line(remaining_tokens, syntax, scope)
 
-      # Labels
-      # [
-      #   {{:identifier, label_name}, line},
-      #   {{:separator, ?:}, line},
-      #   {:eol, line} | remaining_tokens
-      # ] ->
-      #   parse_line(remaining_tokens, [{{:label, label_name}, line} | syntax], scope)
-
       # Macro definitions are parsed differently than other directives
       [{{:identifier, ".macro"}, line} | remaining_tokens] ->
         with {:ok, name, args, new_remaining_tokens} <-
@@ -346,23 +338,6 @@ defmodule ASM510.Parser do
          parse_if_else(
            remaining_tokens,
            {:not_defined?, {:identifier, name}},
-           line,
-           syntax,
-           scope
-         )
-
-  defp handle_directive(
-         "ifndef",
-         [{:quoted_identifier, name}],
-         line,
-         remaining_tokens,
-         syntax,
-         scope
-       ),
-       do:
-         parse_if_else(
-           remaining_tokens,
-           {:not_defined?, {:quoted_identifier, name}},
            line,
            syntax,
            scope
