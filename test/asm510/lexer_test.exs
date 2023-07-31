@@ -8,9 +8,9 @@ defmodule ASM510.LexerTest do
   end
 
   test "bad identifier" do
-    test_input = "abc\\"
+    test_input = "abc$"
     tokens = ASM510.Lexer.lex(test_input)
-    assert tokens == {:error, 1, {:bad_identifier, "abc\\"}}
+    assert tokens == {:error, 1, {:bad_identifier, "abc$"}}
   end
 
   test "bad number" do
@@ -27,11 +27,11 @@ defmodule ASM510.LexerTest do
     assert tokens ==
              {:ok,
               [
-                {{:operator, :right_shift}, 1},
+                {{:operator, :greater_than}, 1},
                 {{:operator, :left_shift}, 1},
                 {{:operator, :xor}, 1},
                 {{:operator, :right_shift}, 1},
-                {{:operator, :left_shift}, 1},
+                {{:operator, :less_than}, 1},
                 {:eol, 1}
               ]}
   end

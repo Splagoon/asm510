@@ -4,7 +4,7 @@ defmodule Asm510.MixProject do
   def project do
     [
       app: :asm510,
-      version: "1.2.0",
+      version: "1.3.0",
       elixir: "~> 1.15",
       start_permanent: Mix.env() == :prod,
       deps: deps(),

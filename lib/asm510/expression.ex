@@ -1,5 +1,5 @@
 defmodule ASM510.Expression do
-  import Bitwise
+  defp from_boolean(func), do: fn lhs, rhs -> if func.(lhs, rhs), do: 1, else: 0 end
 
   defp get_operation(operator),
     do:
@@ -16,12 +16,18 @@ defmodule ASM510.Expression do
         :or => &Bitwise.|||/2,
         :and => &Bitwise.&&&/2,
         :xor => &Bitwise.^^^/2,
-        :or_not => &(&1 ||| ~~~&2)
+        :not => &if(&1 == 0, do: 1, else: 0),
+        :equal => from_boolean(&Kernel.==/2),
+        :not_equal => from_boolean(&Kernel.!=/2),
+        :less_or_equal => from_boolean(&Kernel.<=/2),
+        :less_than => from_boolean(&Kernel.</2),
+        :greater_or_equal => from_boolean(&Kernel.>=/2),
+        :greater_than => from_boolean(&Kernel.>/2)
       }[operator]
 
-  defguardp is_unary(operator) when operator in [:negate, :complement]
+  defguardp is_unary(operator) when operator in [:negate, :complement, :not]
 
-  def evaluate(expression, line, variables), do: evaluate(expression, [], line, variables)
+  def evaluate(expression, line, state), do: evaluate(expression, [], line, state)
 
   defp evaluate([], [final_value], line, variables), do: get_value(final_value, line, variables)
 
@@ -29,13 +35,13 @@ defmodule ASM510.Expression do
          [{:operator, operator} | remaining_stack],
          [operand | remaining_arguments],
          line,
-         variables
+         state
        )
        when is_unary(operator) do
-    with {:ok, operand} <- get_value(operand, line, variables),
+    with {:ok, operand} <- get_value(operand, line, state),
          operation <- get_operation(operator) do
       result = operation.(operand)
-      evaluate(remaining_stack, [{:number, result} | remaining_arguments], line, variables)
+      evaluate(remaining_stack, [{:number, result} | remaining_arguments], line, state)
     end
   end
 
@@ -43,28 +49,28 @@ defmodule ASM510.Expression do
          [{:operator, operator} | remaining_stack],
          [rhs, lhs | remaining_arguments],
          line,
-         variables
+         state
        )
        when not is_unary(operator) do
-    with {:ok, lhs_value} <- get_value(lhs, line, variables),
-         {:ok, rhs_value} <- get_value(rhs, line, variables),
+    with {:ok, lhs_value} <- get_value(lhs, line, state),
+         {:ok, rhs_value} <- get_value(rhs, line, state),
          operation <- get_operation(operator) do
       result = operation.(lhs_value, rhs_value)
-      evaluate(remaining_stack, [{:number, result} | remaining_arguments], line, variables)
+      evaluate(remaining_stack, [{:number, result} | remaining_arguments], line, state)
     end
   end
 
-  defp evaluate([token | remaining_stack], argument_stack, line, variables),
-    do: evaluate(remaining_stack, [token | argument_stack], line, variables)
+  defp evaluate([token | remaining_stack], argument_stack, line, state),
+    do: evaluate(remaining_stack, [token | argument_stack], line, state)
 
   defp evaluate(_, _, line, _), do: {:error, line, :invalid_expression}
 
   defp get_value({:number, value}, _, _), do: {:ok, value}
 
-  defp get_value({:identifier, name}, line, variables) do
-    with {:ok, value} <- Map.fetch(variables, name) do
-      {:ok, value}
-    else
+  defp get_value({:identifier, name}, line, state) do
+    case Map.fetch(state.env, name) do
+      {:ok, func} when is_function(func) -> func.(line, state)
+      {:ok, value} -> {:ok, value}
       :error -> {:error, line, {:undefined_symbol, name}}
     end
   end
@@ -131,25 +137,32 @@ defmodule ASM510.Expression do
     do: {:error, line, {:unexpected_token, last_token}}
 
   def parse(tokens) do
-    with :ok <- validate_operand(tokens, 0) do
-      parse_expression(tokens, [], [])
+    with :ok <- validate_operand(tokens, 0),
+         {:ok, expression} <- parse_expression(tokens, [], []) do
+      {:ok, {:expression, expression}}
     end
   end
 
   @precedence_map %{
-    :add => 1,
-    :subtract => 1,
+    :equal => 1,
+    :not_equal => 1,
+    :greater_or_equal => 1,
+    :greater_than => 1,
+    :less_or_equal => 1,
+    :less_than => 1,
     :or => 2,
-    :and => 2,
-    :xor => 2,
-    :or_not => 2,
-    :multiply => 3,
-    :divide => 3,
-    :remainder => 3,
-    :left_shift => 3,
-    :right_shift => 3,
+    :xor => 3,
+    :and => 4,
+    :left_shift => 5,
+    :right_shift => 5,
+    :add => 6,
+    :subtract => 6,
+    :multiply => 7,
+    :divide => 7,
+    :remainder => 7,
     :negate => 9,
-    :complement => 9
+    :complement => 9,
+    :not => 9
   }
 
   # https://en.wikipedia.org/wiki/Shunting-yard_algorithm
