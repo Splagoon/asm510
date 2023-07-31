@@ -125,7 +125,7 @@ With that definition, `sum 0, 5` is equivalent to assembling:
 .word 5
 ```
 
-If a macro argument specifies a default value, they can be omitted from the macro invocation by either skipping the argument with `,` or leaving it off the end of the arguments list. For example, given the earlier `sum` macro, all of the following invocations are equivalent:
+If a macro argument specifies a default value, it can be omitted from the macro invocation by either skipping the argument with `,` or leaving it off the end of the arguments list. For example, given the earlier `sum` macro, all of the following invocations are equivalent:
 
 ```asm
 sum 0, 5
@@ -135,7 +135,7 @@ sum , 5
 sum
 ```
 
-Attempting to skip and argument that has no default will generate an error.
+Attempting to skip an argument that has no default will generate an error.
 
 If you wish to refer to the **name** passed to an argument, refer to it as `'`_arg_. Some examples:
 
