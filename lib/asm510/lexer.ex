@@ -145,12 +145,14 @@ defmodule ASM510.Lexer do
   defp scan_identifier(string, line_number) do
     {identifier, remaining_string} = String.split_at(string, count_until_separator(string, 0))
 
-    if String.length(identifier) > 0 and
-         identifier
-         |> String.to_charlist()
-         |> then(fn [head | tail] ->
-           is_valid_identifier_start(head) and Enum.all?(tail, &is_valid_identifier/1)
-         end) do
+    # \@ is a special case
+    if identifier == "\\@" or
+         (String.length(identifier) > 0 and
+            identifier
+            |> String.to_charlist()
+            |> then(fn [head | tail] ->
+              is_valid_identifier_start(head) and Enum.all?(tail, &is_valid_identifier/1)
+            end)) do
       {:ok, identifier, remaining_string}
     else
       {:error, line_number, {:bad_identifier, identifier}}

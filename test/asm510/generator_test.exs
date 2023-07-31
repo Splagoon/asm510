@@ -421,4 +421,60 @@ defmodule ASM510.GeneratorTest do
       end
     end
   end
+
+  test "location counter variable" do
+    test_input = """
+    .org 0x1C
+    .set here, .
+    .org 0
+    .word here
+    """
+
+    with {:ok, tokens} <- Lexer.lex(test_input),
+         {:ok, syntax} <- Parser.parse(tokens),
+         {:ok, rom} <- Generator.generate(syntax, 1) do
+      assert rom == <<0x1C::8>>
+    else
+      error -> flunk("Got error: #{inspect(error)}")
+    end
+  end
+
+  test "macro invocation counter" do
+    test_input = """
+    .macro macro1
+    LABEL_\\@:
+    .endm
+    
+    .macro macro2
+    .set before, \\@
+    LABEL_\\@:
+    macro1
+    .if before != \\@
+    .err
+    .endif
+    .endm
+    
+    macro1 # 1
+    macro1 # 2
+    macro2 # 3, 4
+    macro1 # 5
+    
+    .irp label, LABEL_0, LABEL_1, LABEL_2, LABEL_3, LABEL_4
+    .ifndef \\label
+    .err
+    .endif
+    .endr
+    .ifdef \\@
+    .err
+    .endif
+    """
+
+    with {:ok, tokens} <- Lexer.lex(test_input),
+         {:ok, syntax} <- Parser.parse(tokens),
+         {:ok, rom} <- Generator.generate(syntax, 1) do
+      assert rom == <<0::8>>
+    else
+      error -> flunk("Got error: #{inspect(error)}")
+    end
+  end
 end

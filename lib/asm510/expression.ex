@@ -27,7 +27,7 @@ defmodule ASM510.Expression do
 
   defguardp is_unary(operator) when operator in [:negate, :complement, :not]
 
-  def evaluate(expression, line, variables), do: evaluate(expression, [], line, variables)
+  def evaluate(expression, line, state), do: evaluate(expression, [], line, state)
 
   defp evaluate([], [final_value], line, variables), do: get_value(final_value, line, variables)
 
@@ -35,13 +35,13 @@ defmodule ASM510.Expression do
          [{:operator, operator} | remaining_stack],
          [operand | remaining_arguments],
          line,
-         variables
+         state
        )
        when is_unary(operator) do
-    with {:ok, operand} <- get_value(operand, line, variables),
+    with {:ok, operand} <- get_value(operand, line, state),
          operation <- get_operation(operator) do
       result = operation.(operand)
-      evaluate(remaining_stack, [{:number, result} | remaining_arguments], line, variables)
+      evaluate(remaining_stack, [{:number, result} | remaining_arguments], line, state)
     end
   end
 
@@ -49,27 +49,27 @@ defmodule ASM510.Expression do
          [{:operator, operator} | remaining_stack],
          [rhs, lhs | remaining_arguments],
          line,
-         variables
+         state
        )
        when not is_unary(operator) do
-    with {:ok, lhs_value} <- get_value(lhs, line, variables),
-         {:ok, rhs_value} <- get_value(rhs, line, variables),
+    with {:ok, lhs_value} <- get_value(lhs, line, state),
+         {:ok, rhs_value} <- get_value(rhs, line, state),
          operation <- get_operation(operator) do
       result = operation.(lhs_value, rhs_value)
-      evaluate(remaining_stack, [{:number, result} | remaining_arguments], line, variables)
+      evaluate(remaining_stack, [{:number, result} | remaining_arguments], line, state)
     end
   end
 
-  defp evaluate([token | remaining_stack], argument_stack, line, variables),
-    do: evaluate(remaining_stack, [token | argument_stack], line, variables)
+  defp evaluate([token | remaining_stack], argument_stack, line, state),
+    do: evaluate(remaining_stack, [token | argument_stack], line, state)
 
   defp evaluate(_, _, line, _), do: {:error, line, :invalid_expression}
 
   defp get_value({:number, value}, _, _), do: {:ok, value}
 
-  defp get_value({:identifier, name}, line, variables) do
-    case Map.fetch(variables, name) do
-      {:ok, func} when is_function(func) -> func.(line, variables)
+  defp get_value({:identifier, name}, line, state) do
+    case Map.fetch(state.env, name) do
+      {:ok, func} when is_function(func) -> func.(line, state)
       {:ok, value} -> {:ok, value}
       :error -> {:error, line, {:undefined_symbol, name}}
     end

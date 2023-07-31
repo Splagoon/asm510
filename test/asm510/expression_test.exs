@@ -1,7 +1,7 @@
 defmodule ASM510.ExpressionTest do
   use ExUnit.Case
 
-  alias ASM510.{Lexer, Expression}
+  alias ASM510.{Lexer, Expression, Generator.State}
 
   test "arithmetic" do
     # 5 * 7 - 6 / -(3 - 5) + 9 + -1
@@ -28,7 +28,7 @@ defmodule ASM510.ExpressionTest do
       |> Enum.map(&{&1, 1})
 
     with {:ok, {:expression, expression}} <- Expression.parse(tokens),
-         {:ok, result} <- Expression.evaluate(expression, 0, %{}) do
+         {:ok, result} <- Expression.evaluate(expression, 0, %State{}) do
       assert result == 40
     else
       error -> flunk("Got error: #{inspect(error)}")
@@ -84,7 +84,7 @@ defmodule ASM510.ExpressionTest do
       |> Enum.map(&{&1, 1})
 
     with {:ok, {:expression, expression}} <- Expression.parse(tokens),
-         {:ok, result} <- Expression.evaluate(expression, 0, %{}) do
+         {:ok, result} <- Expression.evaluate(expression, 0, %State{}) do
       assert result == 3
     else
       error -> flunk("Got error: #{inspect(error)}")
@@ -123,7 +123,7 @@ defmodule ASM510.ExpressionTest do
     tokens = [{{:identifier, "x"}, 1}]
 
     with {:ok, {:expression, expression}} <- Expression.parse(tokens),
-         {:ok, result} <- Expression.evaluate(expression, 0, %{"x" => 123}) do
+         {:ok, result} <- Expression.evaluate(expression, 0, %State{env: %{"x" => 123}}) do
       assert result == 123
     else
       error -> flunk("Got error: #{inspect(error)}")
@@ -146,7 +146,7 @@ defmodule ASM510.ExpressionTest do
            # Remove :eol token
            tokens <- List.delete_at(tokens, -1),
            {:ok, {:expression, expression}} <- Expression.parse(tokens),
-           {:ok, result} <- Expression.evaluate(expression, 0, %{}) do
+           {:ok, result} <- Expression.evaluate(expression, 0, %State{}) do
         assert result == expected
       else
         error -> flunk("Got error: #{inspect(error)}")
