@@ -6,7 +6,7 @@ defmodule ASM510.CLI do
 
     with {:ok, in: input_path, out: output_path} <- parse_args(argv),
          {:ok, input_data} <- File.read(input_path),
-         {:ok, tokens} <- Lexer.lex(input_data),
+         {:ok, tokens} <- Lexer.lex(input_data, input_path),
          {:ok, syntax} <- Parser.parse(tokens),
          {:ok, output_data} <- Generator.generate(syntax),
          :ok <- File.write(output_path, output_data) do
@@ -15,15 +15,11 @@ defmodule ASM510.CLI do
       sha3 = :crypto.hash(:sha3_224, output_data) |> Base.encode64()
       IO.puts("Done in #{millis}ms\n    sha1: #{sha1}\nsha3-224: #{sha3}")
     else
-      {:error, [line: line, macro_line: macro_line], error} ->
+      {:error, location, error} ->
         IO.puts(
           :stderr,
-          "Error on line #{line} in macro expanded at line #{macro_line}: #{error_message(error)}"
+          "Error at #{location_message(location)}: #{error_message(error)}"
         )
-
-      {:error, line, error} ->
-        IO.puts(:stderr, "Error on line #{line}: #{error_message(error)}")
-        exit(1)
 
       {:error, error} ->
         IO.puts(:stderr, "Error: #{error_message(error)}")
@@ -100,4 +96,22 @@ defmodule ASM510.CLI do
 
   # Other
   defp error_message(error), do: "Unknown error: #{inspect(error)}"
+
+  defp location_message(location) do
+    location_string =
+      if is_nil(location.file),
+        do: "line #{location.line}",
+        else: "#{location.file}:#{location.line}"
+
+    cond do
+      Map.has_key?(location, :macro) ->
+        "#{location_string} in macro expanded at #{location_message(location.macro)}"
+
+      Map.has_key?(location, :include) ->
+        "#{location_string} in file included at #{location_message(location.include)}"
+
+      true ->
+        location_string
+    end
+  end
 end

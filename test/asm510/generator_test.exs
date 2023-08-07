@@ -74,7 +74,7 @@ defmodule ASM510.GeneratorTest do
 
     with {:ok, tokens} <- Lexer.lex(test_input),
          {:ok, syntax} <- Parser.parse(tokens) do
-      assert Generator.generate(syntax) == {:error, 1, :err_directive}
+      assert Generator.generate(syntax) == {:error, %{line: 1, file: nil}, :err_directive}
     end
   end
 
@@ -114,7 +114,8 @@ defmodule ASM510.GeneratorTest do
 
     with {:ok, tokens} <- Lexer.lex(test_input),
          {:ok, syntax} <- Parser.parse(tokens) do
-      assert Generator.generate(syntax) == {:error, 7, {:undefined_symbol, "undefined"}}
+      assert Generator.generate(syntax) ==
+               {:error, %{line: 7, file: nil}, {:undefined_symbol, "undefined"}}
     else
       error -> flunk("Got error: #{inspect(error)}")
     end
@@ -153,14 +154,14 @@ defmodule ASM510.GeneratorTest do
     .macro test1 x, y=2
     .word \\x + \\y
     .endm
-    
+
     .macro test2 x=2+1, y
     .if \\x == \\y
     .exitm
     .endif
     .word \\x * \\y
     .endm
-    
+
     .macro collatz n, l=0
     .if \\n != 1
     .if \\n % 2 != 0
@@ -196,6 +197,8 @@ defmodule ASM510.GeneratorTest do
   end
 
   test "macro errors" do
+    line = fn n -> %{line: n, file: nil} end
+
     tests = [
       {"""
        .irp x, 0, 0, 1
@@ -203,12 +206,12 @@ defmodule ASM510.GeneratorTest do
        .exitm
        .endif
        .endr
-       """, {3, :unexpected_exit_macro}},
+       """, {line.(3), :unexpected_exit_macro}},
       {"""
        .macro test x, y=1
        .endm
        test ,1
-       """, {3, {:missing_required_argument, "test", "x"}}},
+       """, {line.(3), {:missing_required_argument, "test", "x"}}},
       {"""
        .macro maybe_err flag
        .if \\flag
@@ -217,25 +220,25 @@ defmodule ASM510.GeneratorTest do
        .endm
        maybe_err 0
        maybe_err 1
-       """, {[line: 3, macro_line: 7], :err_directive}},
+       """, {Map.put(line.(3), :macro, line.(7)), :err_directive}},
       {"""
        .macro test x, y
        .endm
        test ,,
-       """, {3, {:too_many_arguments, "test", 2, 3}}},
+       """, {line.(3), {:too_many_arguments, "test", 2, 3}}},
       {"""
        .macro test x, y, z
        .word \\x
        .endm
        test 1, 2, 3
        .word \\x
-       """, {5, {:undefined_symbol, "\\x"}}}
+       """, {line.(5), {:undefined_symbol, "\\x"}}}
     ]
 
-    for {input, {line, expected_error}} <- tests do
+    for {input, {location, expected_error}} <- tests do
       with {:ok, tokens} <- Lexer.lex(input),
            {:ok, syntax} <- Parser.parse(tokens) do
-        assert Generator.generate(syntax) == {:error, line, expected_error}
+        assert Generator.generate(syntax) == {:error, location, expected_error}
       else
         error -> flunk("Got error: #{inspect(error)}")
       end
@@ -258,7 +261,7 @@ defmodule ASM510.GeneratorTest do
     for {input, expected_error} <- tests do
       with {:ok, tokens} <- Lexer.lex(input),
            {:ok, syntax} <- Parser.parse(tokens) do
-        assert Generator.generate(syntax) == {:error, 1, expected_error}
+        assert Generator.generate(syntax) == {:error, %{line: 1, file: nil}, expected_error}
       else
         error -> flunk("Got error: #{inspect(error)}")
       end
@@ -364,31 +367,33 @@ defmodule ASM510.GeneratorTest do
   end
 
   test "quoted symbol errors" do
+    line = fn n -> %{line: n, file: nil} end
+
     tests = [
       {"""
        .ifdef 'x
        .err
        .endif
-       """, 1, {:undefined_symbol, "'x"}},
+       """, line.(1), {:undefined_symbol, "'x"}},
       {"""
        .macro test name
        .set 'name, \\name
        .endm
        test foo
-       """, [line: 2, macro_line: 4], {:undefined_symbol, "foo"}},
+       """, Map.put(line.(2), :macro, line.(4)), {:undefined_symbol, "foo"}},
       {"""
        .macro test
        .set 'asdf, 0
        .endm
        test
-       """, [line: 2, macro_line: 4], {:undefined_symbol, "'asdf"}},
+       """, Map.put(line.(2), :macro, line.(4)), {:undefined_symbol, "'asdf"}},
       {"""
        .macro test arg
        .set 'arg, 1
        .endm
        test x
        .set 'arg, 2
-       """, 5, {:undefined_symbol, "'arg"}}
+       """, line.(5), {:undefined_symbol, "'arg"}}
     ]
 
     for {input, line, error} <- tests do
@@ -402,20 +407,22 @@ defmodule ASM510.GeneratorTest do
   end
 
   test "undefined symbol in label expression" do
+    line = fn n -> %{line: n, file: nil} end
+
     tests = [
-      {"LABEL_\\value:", 1, "\\value"},
-      {"LABEL_'name:", 1, "'name"},
+      {"LABEL_\\value:", line.(1), "\\value"},
+      {"LABEL_'name:", line.(1), "'name"},
       {"""
        .irp value, 1
        .word LABEL_\\value
        .endr
-       """, 2, "LABEL_1"}
+       """, line.(2), "LABEL_1"}
     ]
 
-    for {input, line, symbol} <- tests do
+    for {input, location, symbol} <- tests do
       with {:ok, tokens} <- Lexer.lex(input),
            {:ok, syntax} <- Parser.parse(tokens) do
-        assert Generator.generate(syntax, 1) == {:error, line, {:undefined_symbol, symbol}}
+        assert Generator.generate(syntax, 1) == {:error, location, {:undefined_symbol, symbol}}
       else
         error -> flunk("Got error: #{inspect(error)}")
       end
@@ -444,7 +451,7 @@ defmodule ASM510.GeneratorTest do
     .macro macro1
     LABEL_\\@:
     .endm
-    
+
     .macro macro2
     .set before, \\@
     LABEL_\\@:
@@ -453,12 +460,12 @@ defmodule ASM510.GeneratorTest do
     .err
     .endif
     .endm
-    
+
     macro1 # 1
     macro1 # 2
     macro2 # 3, 4
     macro1 # 5
-    
+
     .irp label, LABEL_0, LABEL_1, LABEL_2, LABEL_3, LABEL_4
     .ifndef \\label
     .err

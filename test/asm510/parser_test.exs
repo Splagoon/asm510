@@ -5,24 +5,28 @@ defmodule ASM510.ParserTest do
 
   test "unexpected token" do
     # :
-    test_tokens = [{{:separator, ?:}, 1}, {:eol, 1}]
+    test_tokens =
+      [{:separator, ?:}, :eol]
+      |> Enum.map(&{&1, %{line: 1, file: nil}})
 
     syntax = Parser.parse(test_tokens)
 
-    assert match?({:error, 1, {:unexpected_token, {:separator, ?:}}}, syntax)
+    assert match?({:error, %{line: 1, file: nil}, {:unexpected_token, {:separator, ?:}}}, syntax)
   end
 
   test "call with args" do
     # call 1, name, 2
-    test_tokens = [
-      {{:identifier, "call"}, 1},
-      {{:number, 1}, 1},
-      {{:separator, ?,}, 1},
-      {{:identifier, "name"}, 1},
-      {{:separator, ?,}, 1},
-      {{:number, 2}, 1},
-      {:eol, 1}
-    ]
+    test_tokens =
+      [
+        {:identifier, "call"},
+        {:number, 1},
+        {:separator, ?,},
+        {:identifier, "name"},
+        {:separator, ?,},
+        {:number, 2},
+        :eol
+      ]
+      |> Enum.map(&{&1, %{line: 1, file: nil}})
 
     syntax = Parser.parse(test_tokens)
 
@@ -34,7 +38,7 @@ defmodule ASM510.ParserTest do
                     {:expression, [number: 1]},
                     {:identifier, "name"},
                     {:expression, [number: 2]}
-                  ]}, 1}
+                  ]}, %{line: 1, file: nil}}
               ]}
   end
 
@@ -47,12 +51,12 @@ defmodule ASM510.ParserTest do
         {:separator, ?,},
         :eol
       ]
-      |> Enum.map(&{&1, 1})
+      |> Enum.map(&{&1, %{line: 1, file: nil}})
 
     syntax = Parser.parse(test_tokens)
 
     assert syntax ==
-             {:ok, [{{:call, "call", [nil, nil, nil]}, 1}]}
+             {:ok, [{{:call, "call", [nil, nil, nil]}, %{line: 1, file: nil}}]}
   end
 
   test "nested loops" do
@@ -67,10 +71,12 @@ defmodule ASM510.ParserTest do
     .endr
     """
 
+    line = fn n -> %{line: n, file: nil} end
+
     with {:ok, tokens} <- Lexer.lex(test_input),
          {:ok, syntax} <- Parser.parse(tokens) do
       assert syntax == [
-               {{:word, {:expression, [number: 1]}}, 1},
+               {{:word, {:expression, [number: 1]}}, line.(1)},
                {{:irp, {:identifier, "x"},
                  [
                    expression: [number: 2],
@@ -85,11 +91,11 @@ defmodule ASM510.ParserTest do
                        expression: [number: 7]
                      ],
                      [
-                       {{:word, {:identifier, "\\x"}}, 4},
-                       {{:word, {:identifier, "\\y"}}, 5}
-                     ]}, 3},
-                   {{:word, {:expression, [number: 8]}}, 7}
-                 ]}, 2}
+                       {{:word, {:identifier, "\\x"}}, line.(4)},
+                       {{:word, {:identifier, "\\y"}}, line.(5)}
+                     ]}, line.(3)},
+                   {{:word, {:expression, [number: 8]}}, line.(7)}
+                 ]}, line.(2)}
              ]
     else
       error -> flunk("Got error: #{inspect(error)}")
@@ -102,7 +108,7 @@ defmodule ASM510.ParserTest do
     """
 
     with {:ok, tokens} <- Lexer.lex(test_input) do
-      assert Parser.parse(tokens) == {:error, 1, {:reserved_name, ".test"}}
+      assert Parser.parse(tokens) == {:error, %{line: 1, file: nil}, {:reserved_name, ".test"}}
     else
       error -> flunk("Got error: #{inspect(error)}")
     end
@@ -114,16 +120,17 @@ defmodule ASM510.ParserTest do
     """
 
     with {:ok, tokens} <- Lexer.lex(test_input) do
-      assert Parser.parse(tokens) == {:error, 1, :expected_name}
+      assert Parser.parse(tokens) == {:error, %{line: 1, file: nil}, :expected_name}
     else
       error -> flunk("Got error: #{inspect(error)}")
     end
   end
 
   test "invalid directive" do
-    test_tokens = [{{:identifier, ".xyzzy"}, 1}, {:eol, 1}]
+    test_tokens = [{:identifier, ".xyzzy"}, :eol] |> Enum.map(&{&1, %{line: 1, file: nil}})
 
-    assert Parser.parse(test_tokens) == {:error, 1, {:invalid_directive, "xyzzy"}}
+    assert Parser.parse(test_tokens) ==
+             {:error, %{line: 1, file: nil}, {:invalid_directive, "xyzzy"}}
   end
 
   test "unclosed loop" do
@@ -133,7 +140,7 @@ defmodule ASM510.ParserTest do
     """
 
     with {:ok, tokens} <- Lexer.lex(test_input) do
-      assert Parser.parse(tokens) == {:error, 1, {:scope_not_closed, :loop}}
+      assert Parser.parse(tokens) == {:error, %{line: 1, file: nil}, {:scope_not_closed, :loop}}
     else
       error -> flunk("Got error: #{inspect(error)}")
     end
@@ -146,12 +153,14 @@ defmodule ASM510.ParserTest do
     .endif
     """
 
+    line = fn n -> %{line: n, file: nil} end
+
     with {:ok, tokens} <- Lexer.lex(test_input) do
       assert Parser.parse(tokens) ==
                {:ok,
                 [
-                  {{:if, {:expression, [number: 1]}, [{{:word, {:expression, [number: 1]}}, 2}],
-                    nil}, 1}
+                  {{:if, {:expression, [number: 1]},
+                    [{{:word, {:expression, [number: 1]}}, line.(2)}], nil}, line.(1)}
                 ]}
     end
   end
@@ -165,12 +174,15 @@ defmodule ASM510.ParserTest do
     .endif
     """
 
+    line = fn n -> %{line: n, file: nil} end
+
     with {:ok, tokens} <- Lexer.lex(test_input) do
       assert Parser.parse(tokens) ==
                {:ok,
                 [
-                  {{:if, {:expression, [number: 1]}, [{{:word, {:expression, [number: 1]}}, 2}],
-                    [{{:word, {:expression, [number: 0]}}, 4}]}, 1}
+                  {{:if, {:expression, [number: 1]},
+                    [{{:word, {:expression, [number: 1]}}, line.(2)}],
+                    [{{:word, {:expression, [number: 0]}}, line.(4)}]}, line.(1)}
                 ]}
     end
   end
@@ -202,7 +214,7 @@ defmodule ASM510.ParserTest do
 
     for {input, scope} <- inputs do
       with {:ok, tokens} <- Lexer.lex(input) do
-        assert Parser.parse(tokens) == {:error, 1, {:scope_not_closed, scope}}
+        assert Parser.parse(tokens) == {:error, %{line: 1, file: nil}, {:scope_not_closed, scope}}
       else
         error -> flunk("Got error: #{inspect(error)}")
       end
@@ -225,13 +237,16 @@ defmodule ASM510.ParserTest do
     """
 
     with {:ok, tokens} <- Lexer.lex(test_input) do
-      assert Parser.parse(tokens) == {:error, 7, {:invalid_directive, "xyzzy"}}
+      assert Parser.parse(tokens) ==
+               {:error, %{line: 7, file: nil}, {:invalid_directive, "xyzzy"}}
     else
       error -> flunk("Got error: #{inspect(error)}")
     end
   end
 
   test "macro definition" do
+    line = fn n -> %{line: n, file: nil} end
+
     tests = [
       {
         """
@@ -247,8 +262,8 @@ defmodule ASM510.ParserTest do
               {"arg3", {:expression, [number: 3]}}
             ],
             [
-              {{:word, {:identifier, "\\arg2"}}, 2}
-            ]}, 1}
+              {{:word, {:identifier, "\\arg2"}}, line.(2)}
+            ]}, line.(1)}
         ]
       },
       {
@@ -256,14 +271,14 @@ defmodule ASM510.ParserTest do
         .macro no_args
         .endm
         """,
-        [{{:macro, "no_args", [], []}, 1}]
+        [{{:macro, "no_args", [], []}, line.(1)}]
       },
       {
         """
         .macro one_arg the_arg
         .endm
         """,
-        [{{:macro, "one_arg", [{"the_arg", nil}], []}, 1}]
+        [{{:macro, "one_arg", [{"the_arg", nil}], []}, line.(1)}]
       }
     ]
 
@@ -297,7 +312,7 @@ defmodule ASM510.ParserTest do
 
     for {input, expected_error} <- tests do
       with {:ok, tokens} <- Lexer.lex(input) do
-        assert Parser.parse(tokens) == {:error, 1, expected_error}
+        assert Parser.parse(tokens) == {:error, %{line: 1, file: nil}, expected_error}
       end
     end
   end

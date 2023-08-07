@@ -5,7 +5,7 @@ defmodule ASM510.Parser do
     with {:ok, syntax, remaining_tokens} <- parse_line(tokens, [], nil) do
       case remaining_tokens do
         [] -> {:ok, syntax}
-        [{token, line} | _] -> {:error, line, {:unexpected_token, token}}
+        [{token, location} | _] -> {:error, location, {:unexpected_token, token}}
       end
     end
   end
@@ -21,37 +21,41 @@ defmodule ASM510.Parser do
         parse_line(remaining_tokens, syntax, scope)
 
       # Macro definitions are parsed differently than other directives
-      [{{:identifier, ".macro"}, line} | remaining_tokens] ->
+      [{{:identifier, ".macro"}, location} | remaining_tokens] ->
         with {:ok, name, args, new_remaining_tokens} <-
                parse_macro_args(remaining_tokens, nil, []),
              {:ok, macro_body, new_remaining_tokens} <-
                parse_line(new_remaining_tokens, [], :macro) do
           directive = {:macro, name, args, macro_body}
-          parse_line(new_remaining_tokens, [{directive, line} | syntax], scope)
+          parse_line(new_remaining_tokens, [{directive, location} | syntax], scope)
         end
 
       # Labels, calls, and directives
-      [{{:identifier, name}, line} | remaining_tokens] ->
+      [{{:identifier, name}, location} | remaining_tokens] ->
         # First, try to parse a label
         with {:ok, label, new_remaining_tokens} <- parse_label(tokens) do
-          parse_line(new_remaining_tokens, [{{:label, label}, line} | syntax], scope)
+          parse_line(new_remaining_tokens, [{{:label, label}, location} | syntax], scope)
         else
           # If it's not a label, try again as a call or directive
           _ ->
             with {:ok, args, new_remaining_tokens} <- parse_call_args(remaining_tokens, []) do
               case name do
                 "." <> directive ->
-                  handle_directive(directive, args, line, new_remaining_tokens, syntax, scope)
+                  handle_directive(directive, args, location, new_remaining_tokens, syntax, scope)
 
                 _ ->
-                  parse_line(new_remaining_tokens, [{{:call, name, args}, line} | syntax], scope)
+                  parse_line(
+                    new_remaining_tokens,
+                    [{{:call, name, args}, location} | syntax],
+                    scope
+                  )
               end
             end
         end
 
       # Other
-      [{token, line} | _] ->
-        {:error, line, {:unexpected_token, token}}
+      [{token, location} | _] ->
+        {:error, location, {:unexpected_token, token}}
     end
   end
 
@@ -76,8 +80,8 @@ defmodule ASM510.Parser do
 
         {:ok, {:label_expression, expression}}
 
-      {token, line} ->
-        {:error, line, {:unexpected_token, token}}
+      {token, location} ->
+        {:error, location, {:unexpected_token, token}}
     end
   end
 
@@ -99,7 +103,7 @@ defmodule ASM510.Parser do
   end
 
   defp parse_label(tokens) do
-    {label_tokens, [{separator_token, line} | remaining_tokens]} =
+    {label_tokens, [{separator_token, location} | remaining_tokens]} =
       Enum.split_while(tokens, fn {t, _} ->
         t not in [:eol, {:separator, ?:}]
       end)
@@ -107,7 +111,7 @@ defmodule ASM510.Parser do
     with {:ok, label} <- parse_label_expression(label_tokens) do
       cond do
         separator_token != {:separator, ?:} or Enum.empty?(label_tokens) ->
-          {:error, line, {:unexpected_token, separator_token}}
+          {:error, location, {:unexpected_token, separator_token}}
 
         true ->
           {:ok, label, remaining_tokens}
@@ -135,7 +139,7 @@ defmodule ASM510.Parser do
 
       # Expression
       _ ->
-        {expression_tokens, [{separator_token, line} | remaining_tokens]} =
+        {expression_tokens, [{separator_token, location} | remaining_tokens]} =
           Enum.split_while(tokens, fn {t, _} ->
             t not in [:eol, {:separator, ?,}]
           end)
@@ -143,7 +147,7 @@ defmodule ASM510.Parser do
         new_args =
           case expression_tokens do
             [] ->
-              {:error, line, {:unexpected_token, separator_token}}
+              {:error, location, {:unexpected_token, separator_token}}
 
             _ ->
               with {:ok, arg} <- parse_arg(expression_tokens) do
@@ -162,39 +166,39 @@ defmodule ASM510.Parser do
     end
   end
 
-  defp parse_macro_args([{token, line} | remaining_tokens], nil, args) do
+  defp parse_macro_args([{token, location} | remaining_tokens], nil, args) do
     # Macro name hasn't been parsed yet
     case token do
       {:identifier, name} ->
         parse_macro_args(remaining_tokens, name, args)
 
       _ ->
-        {:error, line, {:unexpected_token, token}}
+        {:error, location, {:unexpected_token, token}}
     end
   end
 
   defp parse_macro_args(tokens, name, args) do
     case tokens do
       # No args
-      [{:eol, line} | remaining_tokens] ->
+      [{:eol, location} | remaining_tokens] ->
         case args do
           [] -> {:ok, name, [], remaining_tokens}
           # If args is non-empty, then there was a trailing comma
-          _ -> {:error, line, {:unexpected_token, :eol}}
+          _ -> {:error, location, {:unexpected_token, :eol}}
         end
 
       # Argument name
-      [{{:identifier, arg_name}, _}, {next_token, line} | remaining_tokens] ->
+      [{{:identifier, arg_name}, _}, {next_token, location} | remaining_tokens] ->
         case next_token do
           {:separator, ?=} ->
             # Arg has a default value
-            {expression_tokens, [{separator_token, line} | remaining_tokens]} =
+            {expression_tokens, [{separator_token, location} | remaining_tokens]} =
               Enum.split_while(remaining_tokens, fn {t, _} ->
                 t not in [:eol, {:separator, ?,}]
               end)
 
             if expression_tokens == [] do
-              {:error, line, {:unexpected_token, separator_token}}
+              {:error, location, {:unexpected_token, separator_token}}
             else
               with {:ok, arg} <- parse_arg(expression_tokens) do
                 new_args = [{arg_name, arg} | args]
@@ -223,60 +227,60 @@ defmodule ASM510.Parser do
 
           _ ->
             # Something else
-            {:error, line, {:unexpected_token, next_token}}
+            {:error, location, {:unexpected_token, next_token}}
         end
 
       # Something else
-      [{token, line} | _] ->
-        {:error, line, {:unexpected_token, token}}
+      [{token, location} | _] ->
+        {:error, location, {:unexpected_token, token}}
     end
   end
 
-  defp handle_directive("word", [value], line, remaining_tokens, syntax, scope) do
+  defp handle_directive("word", [value], location, remaining_tokens, syntax, scope) do
     directive = {:word, value}
-    parse_line(remaining_tokens, [{directive, line} | syntax], scope)
+    parse_line(remaining_tokens, [{directive, location} | syntax], scope)
   end
 
   defp handle_directive(
          "set",
          [name, value],
-         line,
+         location,
          remaining_tokens,
          syntax,
          scope
        ) do
-    with {:ok, name} <- get_variable_name(name, line) do
+    with {:ok, name} <- get_variable_name(name, location) do
       directive = {:set, name, value}
-      parse_line(remaining_tokens, [{directive, line} | syntax], scope)
+      parse_line(remaining_tokens, [{directive, location} | syntax], scope)
     end
   end
 
-  defp handle_directive("org", [value], line, remaining_tokens, syntax, scope) do
+  defp handle_directive("org", [value], location, remaining_tokens, syntax, scope) do
     directive = {:org, value}
-    parse_line(remaining_tokens, [{directive, line} | syntax], scope)
+    parse_line(remaining_tokens, [{directive, location} | syntax], scope)
   end
 
-  defp handle_directive("err", [], line, remaining_tokens, syntax, scope) do
+  defp handle_directive("err", [], location, remaining_tokens, syntax, scope) do
     directive = :err
-    parse_line(remaining_tokens, [{directive, line} | syntax], scope)
+    parse_line(remaining_tokens, [{directive, location} | syntax], scope)
   end
 
-  defp handle_directive("skip", [size], line, remaining_tokens, syntax, scope) do
+  defp handle_directive("skip", [size], location, remaining_tokens, syntax, scope) do
     directive = {:skip, size, nil}
-    parse_line(remaining_tokens, [{directive, line} | syntax], scope)
+    parse_line(remaining_tokens, [{directive, location} | syntax], scope)
   end
 
-  defp handle_directive("skip", [size, fill], line, remaining_tokens, syntax, scope) do
+  defp handle_directive("skip", [size, fill], location, remaining_tokens, syntax, scope) do
     directive = {:skip, size, fill}
-    parse_line(remaining_tokens, [{directive, line} | syntax], scope)
+    parse_line(remaining_tokens, [{directive, location} | syntax], scope)
   end
 
-  defp handle_directive("rept", [count], line, remaining_tokens, syntax, scope) do
+  defp handle_directive("rept", [count], location, remaining_tokens, syntax, scope) do
     with {:ok, loop_body, new_remaining_tokens} <- parse_line(remaining_tokens, [], :loop) do
       directive = {:rept, count, loop_body}
-      parse_line(new_remaining_tokens, [{directive, line} | syntax], scope)
+      parse_line(new_remaining_tokens, [{directive, location} | syntax], scope)
     else
-      {:error, 0, {:scope_not_closed, :loop}} -> {:error, line, {:scope_not_closed, :loop}}
+      {:error, 0, {:scope_not_closed, :loop}} -> {:error, location, {:scope_not_closed, :loop}}
       error -> error
     end
   end
@@ -284,18 +288,18 @@ defmodule ASM510.Parser do
   defp handle_directive(
          "irp",
          [name | values],
-         line,
+         location,
          remaining_tokens,
          syntax,
          scope
        ) do
-    with {:ok, name} <- get_variable_name(name, line),
+    with {:ok, name} <- get_variable_name(name, location),
          {:ok, loop_body, new_remaining_tokens} <-
            parse_line(remaining_tokens, [], :loop) do
       directive = {:irp, name, values, loop_body}
-      parse_line(new_remaining_tokens, [{directive, line} | syntax], scope)
+      parse_line(new_remaining_tokens, [{directive, location} | syntax], scope)
     else
-      {:error, 0, {:scope_not_closed, :loop}} -> {:error, line, {:scope_not_closed, :loop}}
+      {:error, 0, {:scope_not_closed, :loop}} -> {:error, location, {:scope_not_closed, :loop}}
       error -> error
     end
   end
@@ -303,14 +307,14 @@ defmodule ASM510.Parser do
   defp handle_directive("endr", [], _, remaining_tokens, syntax, :loop),
     do: {:ok, Enum.reverse(syntax), remaining_tokens}
 
-  defp handle_directive("if", [expression], line, remaining_tokens, syntax, scope) do
-    parse_if_else(remaining_tokens, expression, line, syntax, scope)
+  defp handle_directive("if", [expression], location, remaining_tokens, syntax, scope) do
+    parse_if_else(remaining_tokens, expression, location, syntax, scope)
   end
 
   defp handle_directive(
          "ifdef",
          [{type, name}],
-         line,
+         location,
          remaining_tokens,
          syntax,
          scope
@@ -320,7 +324,7 @@ defmodule ASM510.Parser do
          parse_if_else(
            remaining_tokens,
            {:defined?, {type, name}},
-           line,
+           location,
            syntax,
            scope
          )
@@ -328,7 +332,7 @@ defmodule ASM510.Parser do
   defp handle_directive(
          "ifndef",
          [{type, name}],
-         line,
+         location,
          remaining_tokens,
          syntax,
          scope
@@ -338,7 +342,7 @@ defmodule ASM510.Parser do
          parse_if_else(
            remaining_tokens,
            {:not_defined?, {:identifier, name}},
-           line,
+           location,
            syntax,
            scope
          )
@@ -353,40 +357,40 @@ defmodule ASM510.Parser do
   defp handle_directive("endm", [], _, remaining_tokens, syntax, :macro),
     do: {:ok, Enum.reverse(syntax), remaining_tokens}
 
-  defp handle_directive("exitm", [], line, remaining_tokens, syntax, scope) do
+  defp handle_directive("exitm", [], location, remaining_tokens, syntax, scope) do
     # .exitm needs to be carried forward into the generation phase, plus we
     # can't exit the current scope until we find .endm
     directive = :exit_macro
-    parse_line(remaining_tokens, [{directive, line} | syntax], scope)
+    parse_line(remaining_tokens, [{directive, location} | syntax], scope)
   end
 
-  defp handle_directive(directive, _, line, _, _, _),
-    do: {:error, line, {:invalid_directive, directive}}
+  defp handle_directive(directive, _, location, _, _, _),
+    do: {:error, location, {:invalid_directive, directive}}
 
-  defp get_variable_name(expression, line) do
+  defp get_variable_name(expression, location) do
     case expression do
       {:identifier, name = <<c::utf8>> <> _} ->
         if c not in ~c[.\\] do
           {:ok, {:identifier, name}}
         else
-          {:error, line, {:reserved_name, name}}
+          {:error, location, {:reserved_name, name}}
         end
 
       quoted_identifier = {:quoted_identifier, _} ->
         {:ok, quoted_identifier}
 
       _ ->
-        {:error, line, :expected_name}
+        {:error, location, :expected_name}
     end
   end
 
-  defp parse_if_else(remaining_tokens, condition, line, syntax, scope) do
+  defp parse_if_else(remaining_tokens, condition, location, syntax, scope) do
     with {:ok, if_body, new_remaining_tokens, closer} <- parse_line(remaining_tokens, [], :if) do
       case closer do
         :endif ->
           parse_line(
             new_remaining_tokens,
-            [{{:if, condition, if_body, nil}, line} | syntax],
+            [{{:if, condition, if_body, nil}, location} | syntax],
             scope
           )
 
@@ -396,13 +400,13 @@ defmodule ASM510.Parser do
             parse_line(
               new_remaining_tokens,
               [
-                {{:if, condition, if_body, else_body}, line} | syntax
+                {{:if, condition, if_body, else_body}, location} | syntax
               ],
               scope
             )
           else
             {:error, 0, {:scope_not_closed, :else}} ->
-              {:error, line, {:scope_not_closed, :else}}
+              {:error, location, {:scope_not_closed, :else}}
 
             error ->
               error
@@ -410,7 +414,7 @@ defmodule ASM510.Parser do
       end
     else
       {:error, 0, {:scope_not_closed, :if}} ->
-        {:error, line, {:scope_not_closed, :if}}
+        {:error, location, {:scope_not_closed, :if}}
 
       error ->
         error

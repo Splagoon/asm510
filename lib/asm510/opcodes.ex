@@ -204,6 +204,6 @@ defmodule ASM510.Opcodes do
   def get_opcode("WS", [], _), do: {:ok, [0x63]}
 
   # Unknown opcode or wrong arity
-  def get_opcode(opcode, args, line_number),
-    do: {:error, line_number, {:bad_opcode, opcode, length(args)}}
+  def get_opcode(opcode, args, location),
+    do: {:error, location, {:bad_opcode, opcode, length(args)}}
 end
