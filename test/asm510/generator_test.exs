@@ -477,4 +477,37 @@ defmodule ASM510.GeneratorTest do
       error -> flunk("Got error: #{inspect(error)}")
     end
   end
+
+  test "fixups" do
+    inputs = [
+      {"""
+       .word FUTURE_LABEL
+       .org 0x41
+       FUTURE_LABEL:
+       """, 0x41},
+      # {"""
+      #  .set future_value1, future_value2 + 1
+      #  .set future_value2, future_value3 + 1
+      #  .set future_value3, 0x1a
+      #  .word future_value1
+      #  """, 0x1C},
+      {"""
+       .macro word_value n
+       .word value_\\n
+       .endm
+       word_value 1
+       .set value_1, 0x42
+       """, 0x42}
+    ]
+
+    for {input, expected} <- inputs do
+      with {:ok, tokens} <- Lexer.lex(input),
+           {:ok, syntax} <- Parser.parse(tokens),
+           {:ok, rom} <- Generator.generate(syntax, 1) do
+        assert rom == <<expected::8>>
+      else
+        error -> flunk("Got error: #{inspect(error)}")
+      end
+    end
+  end
 end

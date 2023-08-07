@@ -1,5 +1,5 @@
 defmodule ASM510.Generator.State do
-  defstruct pc: 0, env: %{}, macros: %{}, macro_counter: 0, data: %{}
+  defstruct pc: 0, env: %{}, macros: %{}, macro_counter: 0, fixups: [], data: %{}
 end
 
 defmodule ASM510.Generator do
@@ -12,7 +12,20 @@ defmodule ASM510.Generator do
     get_pc = fn _, state -> {:ok, state.pc} end
     starting_state = %State{env: %{"." => get_pc}}
 
-    with {:ok, state} <- generate_all(syntax, starting_state) do
+    with {:ok, state} <- generate_all(syntax, starting_state, true),
+         # Apply fixups
+         {:ok, state} <-
+           (for {fixup_state, fixup} <- state.fixups, reduce: {:ok, state} do
+              {:ok, state} ->
+                generate_one(
+                  fixup,
+                  %State{state | pc: fixup_state.pc, env: Map.merge(state.env, fixup_state.env)},
+                  false
+                )
+
+              error ->
+                error
+            end) do
       state.data
       |> assemble_rom(rom_size)
       |> then(&{:ok, &1})
@@ -29,15 +42,15 @@ defmodule ASM510.Generator do
     |> IO.iodata_to_binary()
   end
 
-  defp generate_all([], state), do: {:ok, state}
+  defp generate_all([], state, _), do: {:ok, state}
 
-  defp generate_all([syntax | remaining_syntax], state) do
-    with {:ok, state} <- generate_one(syntax, state) do
-      generate_all(remaining_syntax, state)
+  defp generate_all([syntax | remaining_syntax], state, allow_fixups) do
+    with {:ok, state} <- generate_one(syntax, state, allow_fixups) do
+      generate_all(remaining_syntax, state, allow_fixups)
     end
   end
 
-  defp generate_one(syntax, state) do
+  defp generate_one(syntax, state, allow_fixups) do
     case syntax do
       {{:label, {:label_expression, label_expr}}, line} ->
         with {:ok, label_name} <- get_label_name(label_expr, line, state) do
@@ -48,18 +61,30 @@ defmodule ASM510.Generator do
         name = get_identifier_name(name, line, state.env)
 
         with {:ok, name} <- name,
-             {:ok, value} <- get_arg_value(value_arg, line, state) do
+             {:ok, value} <- get_arg_value(value_arg, line, state, allow_fixups) do
           {:ok, %State{state | env: Map.put(state.env, name, value)}}
+        else
+          :needs_fixup ->
+            put_fixup(state, syntax) |> increment_pc() |> then(&{:ok, &1})
+
+          error ->
+            error
         end
 
       {{:org, value_arg}, line} ->
-        with {:ok, value} <- get_arg_value(value_arg, line, state) do
+        with {:ok, value} <- get_arg_value(value_arg, line, state, false) do
           {:ok, %State{state | pc: value}}
         end
 
       {{:word, value_arg}, line} ->
-        with {:ok, value} <- get_arg_value(value_arg, line, state) do
+        with {:ok, value} <- get_arg_value(value_arg, line, state, allow_fixups) do
           put_byte(state, value) |> increment_pc() |> then(&{:ok, &1})
+        else
+          :needs_fixup ->
+            put_fixup(state, syntax) |> increment_pc() |> then(&{:ok, &1})
+
+          error ->
+            error
         end
 
       {:err, line} ->
@@ -69,10 +94,10 @@ defmodule ASM510.Generator do
         fill_result =
           case fill_arg do
             nil -> {:ok, 0}
-            _ -> get_arg_value(fill_arg, line, state)
+            _ -> get_arg_value(fill_arg, line, state, false)
           end
 
-        with {:ok, size_value} <- get_arg_value(size_arg, line, state),
+        with {:ok, size_value} <- get_arg_value(size_arg, line, state, false),
              {:ok, fill_value} <- fill_result do
           case size_value do
             0 ->
@@ -91,7 +116,7 @@ defmodule ASM510.Generator do
         end
 
       {{:rept, count_arg, loop_body}, line} ->
-        with {:ok, count_value} <- get_arg_value(count_arg, line, state) do
+        with {:ok, count_value} <- get_arg_value(count_arg, line, state, false) do
           case count_value do
             0 ->
               # Do nothing
@@ -100,7 +125,7 @@ defmodule ASM510.Generator do
             _ ->
               for _ <- 1..count_value, reduce: {:ok, state} do
                 {:ok, state} ->
-                  generate_all(loop_body, state)
+                  generate_all(loop_body, state, allow_fixups)
 
                 error ->
                   error
@@ -115,11 +140,15 @@ defmodule ASM510.Generator do
           loop =
             for(value_arg <- values, reduce: {:ok, state}) do
               {:ok, state} ->
-                with {:ok, value} <- get_arg_value(value_arg, line, state) do
-                  generate_all(loop_body, %State{
-                    state
-                    | env: Map.put(state.env, "\\#{name}", value)
-                  })
+                with {:ok, value} <- get_arg_value(value_arg, line, state, false) do
+                  generate_all(
+                    loop_body,
+                    %State{
+                      state
+                      | env: Map.put(state.env, "\\#{name}", value)
+                    },
+                    allow_fixups
+                  )
                 end
 
               error ->
@@ -152,7 +181,7 @@ defmodule ASM510.Generator do
               end
 
             arg ->
-              with {:ok, arg_value} <- get_arg_value(arg, line, state) do
+              with {:ok, arg_value} <- get_arg_value(arg, line, state, false) do
                 {:ok, arg_value != 0}
               end
           end
@@ -160,9 +189,9 @@ defmodule ASM510.Generator do
         with {:ok, condition_true} <- condition_true do
           cond do
             # True case
-            condition_true -> generate_all(if_body, state)
+            condition_true -> generate_all(if_body, state, allow_fixups)
             # False case w/ else branch
-            not is_nil(else_body) -> generate_all(else_body, state)
+            not is_nil(else_body) -> generate_all(else_body, state, allow_fixups)
             # False case w/o else branch (do nothing)
             true -> {:ok, state}
           end
@@ -184,10 +213,22 @@ defmodule ASM510.Generator do
 
         cond do
           Opcodes.is_opcode(upcased_opcode) ->
-            generate_opcode_call(upcased_opcode, args, line_number, state)
+            case generate_opcode_call(upcased_opcode, args, line_number, state, allow_fixups) do
+              :needs_fixup ->
+                put_fixup(state, syntax) |> increment_pc() |> then(&{:ok, &1})
+
+              error ->
+                error
+            end
 
           Map.has_key?(state.macros, opcode) ->
-            generate_macro_call(Map.get(state.macros, opcode), args, line_number, state)
+            generate_macro_call(
+              Map.get(state.macros, opcode),
+              args,
+              line_number,
+              state,
+              allow_fixups
+            )
 
           true ->
             {:error, line_number, {:unknown_opcode, opcode}}
@@ -195,7 +236,7 @@ defmodule ASM510.Generator do
     end
   end
 
-  defp generate_opcode_call(opcode, args, line_number, state) do
+  defp generate_opcode_call(opcode, args, line_number, state, allow_fixups) do
     arg_values_result =
       args
       |> Enum.reduce_while({:ok, []}, fn arg, {:ok, args} ->
@@ -204,7 +245,7 @@ defmodule ASM510.Generator do
             {:halt, {:error, line_number, {:missing_opcode_argument, opcode}}}
 
           arg ->
-            with {:ok, value} <- get_arg_value(arg, line_number, state) do
+            with {:ok, value} <- get_arg_value(arg, line_number, state, allow_fixups) do
               {:cont, {:ok, args ++ [value]}}
             else
               error -> {:halt, error}
@@ -224,7 +265,8 @@ defmodule ASM510.Generator do
          {macro_name, macro_args, macro_body},
          args,
          macro_line_number,
-         state
+         state,
+         allow_fixups
        ) do
     if length(args) > length(macro_args) do
       {:error, macro_line_number,
@@ -269,7 +311,12 @@ defmodule ASM510.Generator do
             _ when not is_nil(arg_value) ->
               # An expression was passed to this arg
               with {:ok, value} <-
-                     get_arg_value(arg_value, macro_line_number, %State{state | env: env}) do
+                     get_arg_value(
+                       arg_value,
+                       macro_line_number,
+                       %State{state | env: env},
+                       allow_fixups
+                     ) do
                 {:cont, {:ok, Map.put(env, "\\#{arg_name}", value)}}
               else
                 error -> {:halt, error}
@@ -279,7 +326,12 @@ defmodule ASM510.Generator do
               # Use this arg's default value
               with arg_default_value <- arg_default,
                    {:ok, value} <-
-                     get_arg_value(arg_default_value, macro_line_number, %State{state | env: env}) do
+                     get_arg_value(
+                       arg_default_value,
+                       macro_line_number,
+                       %State{state | env: env},
+                       allow_fixups
+                     ) do
                 {:cont, {:ok, Map.put(env, "\\#{arg_name}", value)}}
               else
                 error -> {:halt, error}
@@ -300,13 +352,24 @@ defmodule ASM510.Generator do
         end
       end
 
+      # Include line number of macro expansion in the macro body
+      macro_body =
+        macro_body
+        |> Enum.map(fn {directive, line_number} ->
+          {directive, [line: line_number, macro_line: macro_line_number]}
+        end)
+
       with {:ok, macro_env} <- macro_env,
            generate_result <-
-             generate_all(macro_body, %State{
-               state
-               | macro_counter: state.macro_counter + 1,
-                 env: Map.put(macro_env, "\\@", state.macro_counter)
-             }),
+             generate_all(
+               macro_body,
+               %State{
+                 state
+                 | macro_counter: state.macro_counter + 1,
+                   env: Map.put(macro_env, "\\@", state.macro_counter)
+               },
+               allow_fixups
+             ),
            {:ok, new_state} <- get_state.(generate_result) do
         # Keep new values defined in the macro, but unset the args
         # If an arg was shadowed, restore its previous value
@@ -324,12 +387,6 @@ defmodule ASM510.Generator do
           |> then(&unshadow.(&1, "\\@"))
 
         {:ok, %State{new_state | env: new_env}}
-      else
-        {:error, line_number, error} when line_number != macro_line_number ->
-          {:error, [line: line_number, macro_line: macro_line_number], error}
-
-        error ->
-          error
       end
     end
   end
@@ -380,28 +437,34 @@ defmodule ASM510.Generator do
     end
   end
 
-  defp get_arg_value(arg, line, state) do
-    case arg do
-      {type, _} when type in [:identifier, :quoted_identifier] ->
-        with {:ok, name} <- get_identifier_name(arg, line, state.env) do
-          case Map.fetch(state.env, name) do
-            {:ok, func} when is_function(func) -> func.(line, state)
-            {:ok, value} -> {:ok, value}
-            :error -> {:error, line, {:undefined_symbol, name}}
+  defp get_arg_value(arg, line, state, allow_fixups) do
+    result =
+      case arg do
+        {type, _} when type in [:identifier, :quoted_identifier] ->
+          with {:ok, name} <- get_identifier_name(arg, line, state.env) do
+            case Map.fetch(state.env, name) do
+              {:ok, func} when is_function(func) -> func.(line, state)
+              {:ok, value} -> {:ok, value}
+              :error -> {:error, line, {:undefined_symbol, name}}
+            end
           end
-        end
 
-      {:expression, expr} ->
-        Expression.evaluate(expr, line, state)
+        {:expression, expr} ->
+          Expression.evaluate(expr, line, state)
 
-      {:label_expression, label} ->
-        with {:ok, label_name} <- get_label_name(label, line, state) do
-          with {:ok, value} <- Map.fetch(state.env, label_name) do
-            {:ok, value}
-          else
-            :error -> {:error, line, {:undefined_symbol, label_name}}
+        {:label_expression, label} ->
+          with {:ok, label_name} <- get_label_name(label, line, state) do
+            with {:ok, value} <- Map.fetch(state.env, label_name) do
+              {:ok, value}
+            else
+              :error -> {:error, line, {:undefined_symbol, label_name}}
+            end
           end
-        end
+      end
+
+    case result do
+      {:error, _, {:undefined_symbol, _}} when allow_fixups -> :needs_fixup
+      other -> other
     end
   end
 
@@ -413,6 +476,10 @@ defmodule ASM510.Generator do
     new_pc = feed ||| (state.pc >>> 1 &&& page_mask >>> 1) ||| (state.pc &&& ~~~page_mask)
 
     %State{state | pc: new_pc}
+  end
+
+  defp put_fixup(state, syntax) do
+    %State{state | fixups: [{state, syntax} | state.fixups]}
   end
 
   defp put_byte(state, byte) do
