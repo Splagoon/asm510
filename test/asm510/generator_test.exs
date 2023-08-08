@@ -492,12 +492,6 @@ defmodule ASM510.GeneratorTest do
        .org 0x41
        FUTURE_LABEL:
        """, 0x41},
-      # {"""
-      #  .set future_value1, future_value2 + 1
-      #  .set future_value2, future_value3 + 1
-      #  .set future_value3, 0x1a
-      #  .word future_value1
-      #  """, 0x1C},
       {"""
        .macro word_value n
        .word value_\\n
@@ -512,6 +506,56 @@ defmodule ASM510.GeneratorTest do
            {:ok, syntax} <- Parser.parse(tokens),
            {:ok, rom} <- Generator.generate(syntax, 1) do
         assert rom == <<expected::8>>
+      else
+        error -> flunk("Got error: #{inspect(error)}")
+      end
+    end
+  end
+
+  test "nested locations" do
+    inputs = [
+      {
+        """
+        .macro test1
+        .irp x, 1, 2
+        test2 \\x
+        .endr
+        .endm
+
+        .macro test2 y
+        .if \\y == 2
+        test3
+        .endif
+        .endm
+
+        .macro test3
+        .rept 2
+        .ifndef foo
+        .set foo, 1
+        .else
+        .err
+        .endif
+        .endr
+        .endm
+
+        test1
+        """,
+        %{
+          file: nil,
+          line: 18,
+          macro: %{
+            file: nil,
+            line: 9,
+            macro: %{file: nil, line: 3, macro: %{line: 23, file: nil}}
+          }
+        }
+      }
+    ]
+
+    for {test_input, expected_location} <- inputs do
+      with {:ok, tokens} <- Lexer.lex(test_input),
+           {:ok, syntax} <- Parser.parse(tokens) do
+        assert Generator.generate(syntax) == {:error, expected_location, :err_directive}
       else
         error -> flunk("Got error: #{inspect(error)}")
       end

@@ -105,10 +105,10 @@ defmodule ASM510.CLI do
 
     cond do
       Map.has_key?(location, :macro) ->
-        "#{location_string} in macro expanded at #{location_message(location.macro)}"
+        "#{location_string}\nin macro expanded at #{location_message(location.macro)}"
 
       Map.has_key?(location, :include) ->
-        "#{location_string} in file included at #{location_message(location.include)}"
+        "#{location_string}\nin file included at #{location_message(location.include)}"
 
       true ->
         location_string

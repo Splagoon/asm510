@@ -355,9 +355,7 @@ defmodule ASM510.Generator do
       # Include location of macro expansion in the macro body
       macro_body =
         macro_body
-        |> Enum.map(fn {directive, location} ->
-          {directive, Map.put(location, :macro, macro_location)}
-        end)
+        |> map_locations(fn location -> Map.put(location, :macro, macro_location) end)
 
       with {:ok, macro_env} <- macro_env,
            generate_result <-
@@ -465,6 +463,26 @@ defmodule ASM510.Generator do
     case result do
       {:error, _, {:undefined_symbol, _}} when allow_fixups -> :needs_fixup
       other -> other
+    end
+  end
+
+  defp map_locations(body, map_fn) do
+    for {syntax, location} <- body do
+      case syntax do
+        {:if, condition, true_body, false_body} ->
+          {{:if, condition, map_locations(true_body, map_fn),
+            if(is_nil(false_body), do: nil, else: map_locations(false_body, map_fn))},
+           map_fn.(location)}
+
+        {:irp, name, values, loop_body} ->
+          {{:irp, name, values, map_locations(loop_body, map_fn)}, map_fn.(location)}
+
+        {:rept, count, loop_body} ->
+          {{:rept, count, map_locations(loop_body, map_fn)}, map_fn.(location)}
+
+        _ ->
+          {syntax, map_fn.(location)}
+      end
     end
   end
 
