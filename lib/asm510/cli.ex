@@ -55,6 +55,7 @@ defmodule ASM510.CLI do
   # Tokenizer errors
   defp error_message({:bad_identifier, name}), do: "Not a valid identifier: \"#{name}\""
   defp error_message({:bad_number, num}), do: "Not a valid number: \"#{num}\""
+  defp error_message(:missing_end_quote), do: "String is missing closing quote"
 
   # Parser errors
   defp error_message({:unexpected_token, token}),
@@ -69,8 +70,11 @@ defmodule ASM510.CLI do
     do: "No matching #{Parser.directive_to_close_scope(scope)} directive"
 
   # Generator errors
-  defp error_message(:err_directive),
+  defp error_message({:err_directive, nil}),
     do: "Reached .err directive"
+
+  defp error_message({:err_directive, message}),
+    do: "Reached .err directive: #{message}"
 
   defp error_message({:unknown_opcode, opcode}), do: "Not an opcode or known macro: #{opcode}"
 

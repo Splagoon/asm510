@@ -19,7 +19,7 @@ defmodule ASM510.Lexer do
 
   defguardp is_whitespace(c) when c in ~c[\s\t]
 
-  defguardp is_separator(c) when c in ~c[,:=]
+  defguardp is_separator(c) when c in ~c[,:="]
 
   defguardp is_operator(str)
             when str in [
@@ -59,6 +59,15 @@ defmodule ASM510.Lexer do
       # Comment
       "#" <> _ ->
         scan(["" | remaining_lines], location, tokens)
+
+      # String
+      "\"" <> remaining_string ->
+        with {:ok, string_value, new_remaining_string} <- read_string(remaining_string, "") do
+          token = {:string, string_value}
+          scan([new_remaining_string | remaining_lines], location, [{token, location} | tokens])
+        else
+          {:error, error} -> {:error, location, error}
+        end
 
       # 2-char expression operators
       <<c1::utf8, c2::utf8>> <> remaining_string when is_operator([c1, c2]) ->
@@ -180,6 +189,19 @@ defmodule ASM510.Lexer do
     end
   end
 
+  defp read_string("", _), do: {:error, :missing_end_quote}
+
+  # escaped quote
+  defp read_string("\\\"" <> remaining_string, string),
+    do: read_string(remaining_string, string <> "\"")
+
+  defp read_string(<<c::utf8>> <> remaining_string, string) do
+    case c do
+      ?" -> {:ok, string, remaining_string}
+      _ -> read_string(remaining_string, string <> to_string([c]))
+    end
+  end
+
   @operator_token_map %{
     ~c"<<" => :left_shift,
     ~c">>" => :right_shift,
@@ -213,6 +235,7 @@ defmodule ASM510.Lexer do
   def token_to_string({:separator, c}), do: "Separator \"#{to_string([c])}\""
   def token_to_string({:identifier, name}), do: "Identifier \"#{name}\""
   def token_to_string({:number, value}), do: "Number \"#{value}\""
+  def token_to_string({:string, value}), do: "String \"#{value}\""
 
   def token_to_string({:operator, operator}) do
     c =

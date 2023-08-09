@@ -70,11 +70,16 @@ defmodule ASM510.GeneratorTest do
   end
 
   test "err directive" do
-    test_input = ".err"
+    inputs = [{".err", nil}, {".err \"foo\"", "foo"}]
 
-    with {:ok, tokens} <- Lexer.lex(test_input),
-         {:ok, syntax} <- Parser.parse(tokens) do
-      assert Generator.generate(syntax) == {:error, %{line: 1, file: nil}, :err_directive}
+    for {test_input, expected_message} <- inputs do
+      with {:ok, tokens} <- Lexer.lex(test_input),
+           {:ok, syntax} <- Parser.parse(tokens) do
+        assert Generator.generate(syntax) ==
+                 {:error, %{line: 1, file: nil}, {:err_directive, expected_message}}
+      else
+        error -> flunk("Got error: #{inspect(error)}")
+      end
     end
   end
 
@@ -215,12 +220,12 @@ defmodule ASM510.GeneratorTest do
       {"""
        .macro maybe_err flag
        .if \\flag
-       .err
+       .err "\\flag is truthy"
        .endif
        .endm
        maybe_err 0
        maybe_err 1
-       """, {Map.put(line.(3), :macro, line.(7)), :err_directive}},
+       """, {Map.put(line.(3), :macro, line.(7)), {:err_directive, "\\flag is truthy"}}},
       {"""
        .macro test x, y
        .endm
@@ -533,7 +538,7 @@ defmodule ASM510.GeneratorTest do
         .ifndef foo
         .set foo, 1
         .else
-        .err
+        .err "foo defined"
         .endif
         .endr
         .endm
@@ -555,7 +560,8 @@ defmodule ASM510.GeneratorTest do
     for {test_input, expected_location} <- inputs do
       with {:ok, tokens} <- Lexer.lex(test_input),
            {:ok, syntax} <- Parser.parse(tokens) do
-        assert Generator.generate(syntax) == {:error, expected_location, :err_directive}
+        assert Generator.generate(syntax) ==
+                 {:error, expected_location, {:err_directive, "foo defined"}}
       else
         error -> flunk("Got error: #{inspect(error)}")
       end

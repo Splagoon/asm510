@@ -87,8 +87,8 @@ defmodule ASM510.Generator do
             error
         end
 
-      {:err, location} ->
-        {:error, location, :err_directive}
+      {{:err, message}, location} ->
+        {:error, location, {:err_directive, message}}
 
       {{:skip, size_arg, fill_arg}, location} ->
         fill_result =

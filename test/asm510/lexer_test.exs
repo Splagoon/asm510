@@ -74,4 +74,27 @@ defmodule ASM510.LexerTest do
                 {:eol, l}
               ]}
   end
+
+  test "string" do
+    test_input = ".err \"got \\\"foo\\\", expected \\\"bar\\\"\""
+    l = %{file: nil, line: 1}
+    tokens = ASM510.Lexer.lex(test_input)
+
+    assert tokens ==
+             {:ok,
+              [
+                {{:identifier, ".err"}, l},
+                {{:string, "got \"foo\", expected \"bar\""}, l},
+                {:eol, l}
+              ]}
+  end
+
+  test "invalid string" do
+    test_input = ".include \"file"
+    l = %{file: nil, line: 1}
+    tokens = ASM510.Lexer.lex(test_input)
+
+    assert tokens ==
+             {:error, l, :missing_end_quote}
+  end
 end

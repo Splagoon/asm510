@@ -93,6 +93,9 @@ defmodule ASM510.Parser do
       [{{:quoted_identifier, name}, _}] ->
         {:ok, {:quoted_identifier, name}}
 
+      [{{:string, value}, _}] ->
+        {:ok, {:string, value}}
+
       _ ->
         with {:ok, label} <- parse_label_expression(tokens) do
           {:ok, label}
@@ -137,7 +140,7 @@ defmodule ASM510.Parser do
       [{{:separator, ?,}, _} | remaining_tokens] ->
         parse_call_args(remaining_tokens, [nil | args])
 
-      # Expression
+      # Identifier/quoted identifier/string/expression/label expression
       _ ->
         {expression_tokens, [{separator_token, location} | remaining_tokens]} =
           Enum.split_while(tokens, fn {t, _} ->
@@ -261,7 +264,12 @@ defmodule ASM510.Parser do
   end
 
   defp handle_directive("err", [], location, remaining_tokens, syntax, scope) do
-    directive = :err
+    directive = {:err, nil}
+    parse_line(remaining_tokens, [{directive, location} | syntax], scope)
+  end
+
+  defp handle_directive("err", [{:string, message}], location, remaining_tokens, syntax, scope) do
+    directive = {:err, message}
     parse_line(remaining_tokens, [{directive, location} | syntax], scope)
   end
 

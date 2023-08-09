@@ -36,9 +36,17 @@ Closes a macro body opened by `.macro`.
 
 Closes a loop body opened by `.rept` or `.irp`.
 
-#### `.err`
+#### `.err` [_message_]
 
-Immediately exits the assembly process and prints an error. Useful when combined with conditional directives to fail assembly if certain conditions aren't met.
+Immediately exits the assembly process and prints an error. Useful when combined with conditional directives to fail assembly if certain conditions aren't met. Optionally accepts a string message explaining the error.
+
+For example:
+
+```asm
+.ifndef foo
+.err "foo is not defined"
+.endif
+```
 
 #### `.exitm`
 
@@ -144,7 +152,7 @@ If you wish to refer to the **name** passed to an argument, refer to it as `'`_a
 .macro add_one some_arg
 .ifndef 'some_arg
 # If 'some_arg is undefined, then an expression was passed
-.err
+.err "got expression, expected symbol"
 .endif
 
 .ifndef \some_arg

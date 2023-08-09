@@ -313,7 +313,22 @@ defmodule ASM510.ParserTest do
     for {input, expected_error} <- tests do
       with {:ok, tokens} <- Lexer.lex(input) do
         assert Parser.parse(tokens) == {:error, %{line: 1, file: nil}, expected_error}
+      else
+        error -> flunk("Got error: #{inspect(error)}")
       end
+    end
+  end
+
+  test "err with message" do
+    test_input = """
+    .err \"it's an error"
+    """
+
+    with {:ok, tokens} <- Lexer.lex(test_input),
+         {:ok, syntax} <- Parser.parse(tokens) do
+      assert syntax == [{{:err, "it's an error"}, %{line: 1, file: nil}}]
+    else
+      error -> flunk("Got error: #{inspect(error)}")
     end
   end
 end
